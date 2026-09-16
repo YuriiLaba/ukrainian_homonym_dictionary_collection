@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from homonym_pipeline.config import AppConfig
 from homonym_pipeline.hashing import content_hash
 from homonym_pipeline.llm.client import LLMClient
-from homonym_pipeline.models import FailureRecord, FinalLemmaEntry, FinalSenseEntry, LemmaEntry
+from homonym_pipeline.models import FailureRecord, FinalLemmaEntry, FinalSenseEntry, LemmaAuditRecord, LemmaEntry
 from homonym_pipeline.retrieval.grac import GracClient
 from homonym_pipeline.storage import append_jsonl, latest_by_cache_key
 from homonym_pipeline.validation.example_validator import validate_batch
@@ -26,13 +28,19 @@ def _select_final_examples(examples: list, limit: int) -> list:
 
 
 def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppConfig,
-               grac: GracClient, llm: LLMClient, resume: bool = True) -> list[FinalLemmaEntry]:
+               grac: GracClient, llm: LLMClient, resume: bool = True, *,
+               run_id: str | None = None, workflow: str = "shared",
+               audit_path: str | Path | None = None,
+               stage_metadata: dict[str, dict[str, Any]] | None = None) -> list[FinalLemmaEntry]:
     root = Path(output_dir)
     candidate_path = root / "grac" / "candidate_examples.jsonl"
     assignment_path = root / "validation" / "llm_assignments.jsonl"
     calls_path = root / "validation" / "llm_calls.jsonl"
     rejected_path = root / "validation" / "rejected_examples.jsonl"
     failures_path = root / "validation" / "failures.jsonl"
+    audit_path = Path(audit_path) if audit_path else root / "audit" / "lemma_audit.jsonl"
+    run_id = run_id or "untracked"
+    stage_metadata = stage_metadata or {}
     cache = latest_by_cache_key(assignment_path)
     candidate_cache = latest_by_cache_key(candidate_path)
     finals: list[FinalLemmaEntry] = []
@@ -40,12 +48,19 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     processed_lemmas = 0
     processed_glosses = 0
     glosses_with_examples = 0
+    lemmas_with_multiple_glosses = 0
+    grac_candidates_retrieved = 0
     logger.info(
         "Stage 2/3: GRAC candidate retrieval and Luna validation for %d lemmas.",
         total_lemmas,
     )
 
     for index, entry in enumerate(entries, start=1):
+        lemma_started = time.perf_counter()
+        candidate_count = 0
+        validation_batches = 0
+        validation_cache_hits = 0
+        validated_items = []
         try:
             retrieval_key = content_hash({"stage": "grac", "lemma": entry.lemma,
                                           "max": config.grac.max_examples_per_lemma,
@@ -60,10 +75,12 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                           "examples": [item.model_dump(mode="json") for item in candidate_models]}
                 append_jsonl(candidate_path, record)
                 candidate_cache[retrieval_key] = record
+            candidate_count = len(candidate_models)
 
             accepted_examples = []
             for start in range(0, len(candidate_models), config.validation.batch_size):
                 batch = candidate_models[start:start + config.validation.batch_size]
+                validation_batches += 1
                 if getattr(llm, "dry_run", False):
                     continue
                 validation_key = content_hash({"stage": "validation", "lemma": entry.lemma,
@@ -73,6 +90,8 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                                                "prompt_version": "grac_example_assignment_v1"})
                 cached = cache.get(validation_key) if resume else None
                 from_cache = cached is not None
+                if from_cache:
+                    validation_cache_hits += 1
                 if cached:
                     from homonym_pipeline.models import ValidatedExample
                     validated = [ValidatedExample.model_validate(item) for item in cached["validated"]]
@@ -84,6 +103,7 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                     cache[validation_key] = record
                     append_jsonl(calls_path, {"cache_key": validation_key, **call_record.model_dump(mode="json")})
                 for item in validated:
+                    validated_items.append(item)
                     if item.accepted and item.model_confidence >= config.validation.min_confidence:
                         accepted_examples.append(item)
                     elif not from_cache:
@@ -104,23 +124,77 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                                                     )))
             final_entry = FinalLemmaEntry(lemma=entry.lemma, glosses=sorted(final_senses, key=lambda item: item.sense_id))
             finals.append(final_entry)
+            rejected_by_reason = Counter()
+            for item in validated_items:
+                if item.accepted and item.model_confidence < config.validation.min_confidence:
+                    rejected_by_reason["below_confidence_threshold"] += 1
+                elif not item.accepted:
+                    rejected_by_reason[item.validation_reason] += 1
+            metadata = stage_metadata.get(entry.lemma, {})
+            audit = LemmaAuditRecord(
+                run_id=run_id,
+                workflow=workflow,
+                lemma=entry.lemma,
+                status="success",
+                elapsed_seconds=round(time.perf_counter() - lemma_started, 6),
+                input_glosses=len(entry.glosses),
+                wikipedia_candidates=int(metadata.get("wikipedia_candidates", 0)),
+                terra_actions=dict(metadata.get("terra_actions", {})),
+                grac_candidates_retrieved=candidate_count,
+                validation_batches=validation_batches,
+                validation_cache_hits=validation_cache_hits,
+                llm_assignments=len(validated_items),
+                accepted_before_final_cap=len(accepted_examples),
+                rejected_by_reason=dict(rejected_by_reason),
+                final_glosses=len(final_entry.glosses),
+                final_glosses_with_examples=sum(1 for sense in final_entry.glosses if sense.examples),
+                final_examples=sum(len(sense.examples) for sense in final_entry.glosses),
+            )
+            append_jsonl(audit_path, {
+                "cache_key": content_hash({"stage": "lemma_audit", "run_id": run_id, "lemma": entry.lemma}),
+                **audit.model_dump(mode="json"),
+            })
             processed_lemmas += 1
             processed_glosses += len(final_entry.glosses)
             glosses_with_examples += sum(1 for sense in final_entry.glosses if sense.examples)
+            grac_candidates_retrieved += len(candidate_models)
+            if len(final_entry.glosses) >= 2:
+                lemmas_with_multiple_glosses += 1
             logger.info(
-                "[%d/%d] %s — glosses processed: %d; glosses with >=1 final example: %d "
+                "[%d/%d] %s — GRAC candidates retrieved: %d; glosses processed: %d; "
+                "glosses with >=1 final example: %d; lemmas with >=2 glosses: %d "
                 "(cumulative: %d/%d glosses)",
                 index,
                 total_lemmas,
                 entry.lemma,
+                len(candidate_models),
                 len(final_entry.glosses),
                 sum(1 for sense in final_entry.glosses if sense.examples),
+                lemmas_with_multiple_glosses,
                 glosses_with_examples,
                 processed_glosses,
             )
         except Exception as error:
             append_jsonl(failures_path, FailureRecord(stage="shared", lemma=entry.lemma,
                                                       error_type=type(error).__name__, message=str(error)))
+            audit = LemmaAuditRecord(
+                run_id=run_id,
+                workflow=workflow,
+                lemma=entry.lemma,
+                status="failed",
+                elapsed_seconds=round(time.perf_counter() - lemma_started, 6),
+                input_glosses=len(entry.glosses),
+                grac_candidates_retrieved=candidate_count,
+                validation_batches=validation_batches,
+                validation_cache_hits=validation_cache_hits,
+                llm_assignments=len(validated_items),
+                error_type=type(error).__name__,
+                error_message=str(error),
+            )
+            append_jsonl(audit_path, {
+                "cache_key": content_hash({"stage": "lemma_audit", "run_id": run_id, "lemma": entry.lemma}),
+                **audit.model_dump(mode="json"),
+            })
             logger.error(
                 "[%d/%d] %s — failed: %s (details saved to %s)",
                 index,
@@ -131,10 +205,13 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             )
     logger.info(
         "Stage 2/3 complete: %d/%d lemmas; %d glosses processed; "
-        "%d glosses with >=1 final example.",
+        "%d glosses with >=1 final example; %d lemmas with >=2 glosses; "
+        "%d GRAC candidates retrieved.",
         processed_lemmas,
         total_lemmas,
         processed_glosses,
         glosses_with_examples,
+        lemmas_with_multiple_glosses,
+        grac_candidates_retrieved,
     )
     return finals

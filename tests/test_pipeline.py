@@ -16,6 +16,7 @@ from homonym_pipeline.models import LLMCallRecord
 from homonym_pipeline.models import FinalLemmaEntry, FinalSenseEntry, SourceReference, ValidatedExample, WikipediaCandidate
 from homonym_pipeline.glosses.llm_augmentation import _decisions_to_glosses
 from homonym_pipeline.output.huggingface import to_huggingface_rows, write_huggingface
+from homonym_pipeline.output.manifest import finish_manifest, start_manifest
 from homonym_pipeline.pipeline.shared import run_shared
 from homonym_pipeline.retrieval.grac import FixtureGracClient
 from homonym_pipeline.validation.example_validator import validate_batch
@@ -99,6 +100,7 @@ def test_shared_pipeline_aggregates_and_resumes(tmp_path: Path, caplog):
     assert first[0].glosses[0].examples[0].example_id == "e1"
     assert "glosses processed: 1" in caplog.text
     assert "glosses with >=1 final example: 1" in caplog.text
+    assert "GRAC candidates retrieved: 1" in caplog.text
 
     class FailingGrac(FixtureGracClient):
         def retrieve_examples(self, lemma, max_examples, seed=None):
@@ -375,3 +377,18 @@ def test_final_examples_are_capped_per_sense_by_confidence(tmp_path: Path):
     config.validation.max_final_examples_per_sense = 2
     final = run_shared([LemmaEntry(lemma="автомат", glosses=[gloss])], tmp_path, config, fixture, fake, resume=False)
     assert [item.example_id for item in final[0].glosses[0].examples] == ["e2", "e3"]
+
+
+def test_run_manifest_records_input_and_completion(tmp_path: Path):
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("автомат\n", encoding="utf-8")
+    output_dir = tmp_path / "run"
+    manifest = start_manifest("baseline", input_path, output_dir, AppConfig())
+    assert manifest["status"] == "running"
+    assert manifest["input_sha256"]
+    assert (output_dir / "config.snapshot.yaml").exists()
+
+    finish_manifest(output_dir, status="completed", statistics={"test": True})
+    saved = json.loads((output_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert saved["status"] == "completed"
+    assert saved["statistics"] == {"test": True}

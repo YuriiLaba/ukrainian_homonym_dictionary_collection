@@ -5,6 +5,7 @@ import logging
 
 from homonym_pipeline.config import load_config
 from homonym_pipeline.output.huggingface import write_huggingface
+from homonym_pipeline.output.manifest import finish_manifest, start_manifest
 from homonym_pipeline.output.statistics import calculate_statistics
 from homonym_pipeline.output.writer import write_final
 from homonym_pipeline.pipeline.wikipedia_augmented import run_wikipedia_augmented
@@ -13,7 +14,9 @@ from homonym_pipeline.pipeline.wikipedia_augmented import run_wikipedia_augmente
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     for logger_name in ("httpx", "httpcore", "openai", "openai._base_client"):
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
+        transport_logger = logging.getLogger(logger_name)
+        transport_logger.setLevel(logging.WARNING)
+        transport_logger.propagate = False
     parser = argparse.ArgumentParser(description="Run the Wikipedia-augmented Ukrainian homonym pipeline")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
@@ -44,16 +47,23 @@ def main() -> None:
         config.llm.model_validation = args.validation_model
     if args.gloss_model:
         config.llm.model_gloss = args.gloss_model
+    manifest = start_manifest("wikipedia_augmented", args.input, args.output, config)
     from homonym_pipeline.llm.client import LLMClient
     grac = None
     if args.grac_fixture:
         from homonym_pipeline.retrieval.grac import JsonFileGracClient
         grac = JsonFileGracClient(args.grac_fixture)
-    entries = run_wikipedia_augmented(args.input, args.output, config, llm=LLMClient(config.llm, dry_run=args.dry_run), grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume)
-    logging.info("Stage 3/3: writing final dictionary, Hugging Face export, and statistics.")
-    write_final(entries, args.output)
-    write_huggingface(entries, args.output)
-    calculate_statistics(entries, args.output)
+    try:
+        entries = run_wikipedia_augmented(args.input, args.output, config, llm=LLMClient(config.llm, dry_run=args.dry_run), grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume, run_id=manifest["run_id"])
+        logging.info("Stage 3/3: writing final dictionary, Hugging Face export, and statistics.")
+        write_final(entries, args.output)
+        write_huggingface(entries, args.output)
+        stats = calculate_statistics(entries, args.output, run_id=manifest["run_id"])
+        status = "completed_with_failures" if stats.get("failed_lemmas", 0) else "completed"
+        finish_manifest(args.output, status=status, statistics=stats)
+    except Exception:
+        finish_manifest(args.output, status="failed")
+        raise
 
 
 if __name__ == "__main__":

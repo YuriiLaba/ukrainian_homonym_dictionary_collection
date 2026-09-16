@@ -50,6 +50,13 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     os.replace(temporary, path)
 
 
+def atomic_write_text(path: Path, content: str) -> None:
+    ensure_parent(path)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def atomic_write_jsonl(path: Path, records: Iterable[BaseModel | dict[str, Any]]) -> None:
     ensure_parent(path)
     temporary = path.with_suffix(path.suffix + ".tmp")

@@ -162,3 +162,27 @@ class FailureRecord(BaseModel):
     retry_count: int = 0
     request_id: str | None = None
     occurred_at: datetime = Field(default_factory=utc_now)
+
+
+class LemmaAuditRecord(BaseModel):
+    """Per-lemma audit metrics for reproducible pipeline analysis."""
+
+    run_id: str
+    workflow: str
+    lemma: str
+    status: Literal["success", "failed"]
+    elapsed_seconds: float = 0.0
+    input_glosses: int = 0
+    wikipedia_candidates: int = 0
+    terra_actions: dict[str, int] = Field(default_factory=dict)
+    grac_candidates_retrieved: int = 0
+    validation_batches: int = 0
+    validation_cache_hits: int = 0
+    llm_assignments: int = 0
+    accepted_before_final_cap: int = 0
+    rejected_by_reason: dict[str, int] = Field(default_factory=dict)
+    final_glosses: int = 0
+    final_glosses_with_examples: int = 0
+    final_examples: int = 0
+    error_type: str | None = None
+    error_message: str | None = None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from collections import Counter
 from collections.abc import Iterable
 
 from homonym_pipeline.hashing import sense_id
@@ -179,9 +180,14 @@ def _decisions_to_glosses(
     return glosses
 
 
-def augment_glosses(lemma: str, candidates: list[WikipediaCandidate], client: LLMClient) -> tuple[list[Gloss], object]:
+def augment_glosses(
+    lemma: str,
+    candidates: list[WikipediaCandidate],
+    client: LLMClient,
+) -> tuple[list[Gloss], object, dict[str, int]]:
     payload = {"lemma": lemma, "candidates": [candidate.model_dump(mode="json") for candidate in candidates]}
     result = client.structured(model=client.config.model_gloss, prompt_version=PROMPT_VERSION,
                                system=SYSTEM_PROMPT, user=json.dumps(payload, ensure_ascii=False),
                                schema=GlossAugmentationResponse)
-    return _decisions_to_glosses(lemma, result.parsed.decisions, candidates), result.call_record
+    action_counts = Counter(decision.action for decision in result.parsed.decisions)
+    return _decisions_to_glosses(lemma, result.parsed.decisions, candidates), result.call_record, dict(action_counts)

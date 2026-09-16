@@ -109,8 +109,17 @@ can be changed from the CLI with `--max-final-examples-per-sense`.
 
 The full workflow commands report progress in the terminal after each lemma, including
 the number of glosses processed and the number with at least one final validated
-example. They also print a cumulative summary; detailed validation records remain in
-the output JSONL files.
+example, as well as the current count of lemmas with at least two glosses. They also
+print the number of GRAC candidates for each lemma and a cumulative summary; detailed
+validation records remain in the output JSONL files.
+
+Each CLI run also writes `run_manifest.json` and `config.snapshot.yaml` at the output
+root. The manifest records the workflow, input SHA-256, configuration, Python and
+dependency versions, Git revision when available, completion status, aggregate
+statistics, and output artifact hashes. `audit/lemma_audit.jsonl` contains one
+cache-addressed record per lemma with Wikipedia/Terra, GRAC, validation, rejection,
+final-cap, timing, and failure metrics. Aggregate statistics use the latest audit and
+cache records for the current run, so historical retries do not inflate counts.
 
 The integration was verified with the public Grac v.19 backend
 (`open-5.71.15`). It is a website interface and can change; the adapter intentionally
