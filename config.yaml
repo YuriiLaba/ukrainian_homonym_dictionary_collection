@@ -9,7 +9,7 @@ llm:
 grac:
   endpoint: https://sketch.uacorpus.org/bonito/run.cgi/
   corpus: grac19
-  max_examples_per_lemma: 700
+  max_examples_per_lemma: 500
   timeout_seconds: 30
   user_agent: "ukrainian-homonym-pipeline/0.1 (research)"
   page_size: 100
