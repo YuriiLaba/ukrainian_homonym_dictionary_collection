@@ -176,6 +176,11 @@ class LemmaAuditRecord(BaseModel):
     wikipedia_candidates: int = 0
     terra_actions: dict[str, int] = Field(default_factory=dict)
     grac_candidates_retrieved: int = 0
+    embedding_model: str | None = None
+    embedding_calls: int = 0
+    embedding_cache_hits: int = 0
+    embedding_pairs_scored: int = 0
+    embedding_candidates_selected: int = 0
     validation_batches: int = 0
     validation_cache_hits: int = 0
     llm_assignments: int = 0

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from homonym_pipeline.config import AppConfig
+from homonym_pipeline.embeddings.client import EmbeddingBatch
 from homonym_pipeline.hashing import sense_id
 from homonym_pipeline.inputs.dictionary import parse_dictionary
 from homonym_pipeline.inputs.lemma_list import parse_lemma_list
@@ -19,6 +20,7 @@ from homonym_pipeline.output.huggingface import to_huggingface_rows, write_huggi
 from homonym_pipeline.output.manifest import finish_manifest, start_manifest
 from homonym_pipeline.pipeline.shared import run_shared
 from homonym_pipeline.retrieval.grac import FixtureGracClient
+from homonym_pipeline.retrieval.reranking import cosine_similarity, rank_candidates_by_gloss
 from homonym_pipeline.validation.example_validator import validate_batch
 
 
@@ -56,6 +58,118 @@ def test_candidate_serialization():
     candidate = client.retrieve_examples("автомат", 10)[0]
     assert candidate.example_id.startswith("e_")
     assert candidate.source == "grac"
+
+
+def test_cosine_reranking_selects_top_candidates_per_gloss():
+    class FakeEmbedder:
+        config = AppConfig().embeddings
+        config.model = "fake-embedder"
+        dry_run = False
+
+        def embed_texts(self, texts):
+            vectors = {
+                "зброя": [1.0, 0.0],
+                "Він узяв автомат до рук.": [1.0, 0.0],
+                "Автомат працює без оператора.": [0.0, 1.0],
+            }
+            return EmbeddingBatch([vectors[text] for text in texts], [])
+
+    gloss = Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary")
+    candidates = FixtureGracClient({"автомат": [
+        {"example_id": "e1", "sentence": "Він узяв автомат до рук."},
+        {"example_id": "e2", "sentence": "Автомат працює без оператора."},
+    ]}).retrieve_examples("автомат", 1000)
+    ranked = rank_candidates_by_gloss([gloss], candidates, FakeEmbedder(), top_k=1)
+    assert [item.example_id for item in ranked.by_sense["s1"]] == ["e1"]
+    assert ranked.by_sense["s1"][0].source_metadata["embedding_rank"] == 1
+    assert ranked.by_sense["s1"][0].source_metadata["embedding_cosine_similarity"] == 1.0
+    assert ranked.pairs_scored == 2
+
+
+def test_shared_pipeline_sends_only_embedding_shortlist_to_luna(tmp_path: Path):
+    class FakeEmbedder:
+        config = AppConfig().embeddings
+        config.model = "fake-embedder"
+        dry_run = False
+
+        def embed_texts(self, texts):
+            vectors = {
+                "зброя": [1.0, 0.0],
+                "пристрій": [0.0, 1.0],
+                "Він узяв автомат до рук.": [1.0, 0.0],
+                "Автомат працює без оператора.": [0.0, 1.0],
+            }
+            return EmbeddingBatch([vectors[text] for text in texts], [])
+
+    class RecordingLLM(FakeLLM):
+        def __init__(self):
+            super().__init__(AssignmentResponse(assignments=[]))
+            self.calls = []
+
+        def structured(self, **kwargs):
+            payload = json.loads(kwargs["user"])
+            self.calls.append(payload)
+            item = payload["examples"][0]
+            sense_id = payload["gloss"]["sense_id"]
+            return StructuredResult(
+                parsed=AssignmentResponse(assignments=[LLMAssignment(
+                    example_id=item["example_id"], accepted=True, sense_id=sense_id,
+                    confidence=0.95, reason="matches",
+                )]),
+                call_record=LLMCallRecord(model=kwargs["model"], prompt_version=kwargs["prompt_version"]),
+            )
+
+    config = AppConfig()
+    config.validation.max_candidates_per_gloss = 1
+    entries = [LemmaEntry(lemma="автомат", glosses=[
+        Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary"),
+        Gloss(sense_id="s2", lemma="автомат", gloss="пристрій", source="dictionary"),
+    ])]
+    fixture = FixtureGracClient({"автомат": [
+        {"example_id": "e1", "sentence": "Він узяв автомат до рук."},
+        {"example_id": "e2", "sentence": "Автомат працює без оператора."},
+    ]})
+    llm = RecordingLLM()
+    final = run_shared(entries, tmp_path, config, fixture, llm, resume=False, embedder=FakeEmbedder())
+    assert [call["examples"][0]["example_id"] for call in llm.calls] == ["e1", "e2"]
+    assert [item.example_id for item in final[0].glosses[0].examples] == ["e1"]
+    assert [item.example_id for item in final[0].glosses[1].examples] == ["e2"]
+
+
+def test_openai_embedding_client_batches_requests_and_records_provenance():
+    class Response:
+        id = "emb_test"
+
+        def __init__(self, vectors):
+            self.data = [{"index": index, "embedding": vector} for index, vector in enumerate(vectors)]
+
+        def model_dump(self, mode="json"):
+            return {"id": self.id, "model": "text-embedding-3-small",
+                    "data": self.data, "usage": {"prompt_tokens": 4, "total_tokens": 4}}
+
+    class Embeddings:
+        def __init__(self):
+            self.requests = []
+
+        def create(self, **kwargs):
+            self.requests.append(kwargs)
+            return Response([[float(index + 1), 0.0] for index, _ in enumerate(kwargs["input"])])
+
+    class OpenAI:
+        def __init__(self):
+            self.embeddings = Embeddings()
+
+    from homonym_pipeline.embeddings.client import EmbeddingClient
+
+    config = AppConfig().embeddings
+    config.batch_size = 2
+    api = OpenAI()
+    result = EmbeddingClient(config, client=api).embed_texts(["один", "два", "три"])
+    assert len(api.embeddings.requests) == 2
+    assert [len(request["input"]) for request in api.embeddings.requests] == [2, 1]
+    assert len(result.vectors) == 3
+    assert result.calls[0]["request_id"] == "emb_test"
+    assert result.calls[0]["input_count"] == 2
 
 
 def test_valid_assignment_and_invalid_sense_id_are_rejected():
@@ -133,6 +247,78 @@ def test_shared_pipeline_drops_single_gloss_lemmas(tmp_path: Path, caplog):
     )
     assert result == []
     assert "[filter] Removed 1 single-gloss lemmas. Processing 0 of 1 lemmas." in caplog.text
+
+
+def test_shared_pipeline_validates_each_gloss_separately(tmp_path: Path):
+    class GlossSpecificLLM:
+        def __init__(self):
+            self.config = AppConfig().llm
+            self.calls = []
+
+        def structured(self, **kwargs):
+            payload = json.loads(kwargs["user"])
+            self.calls.append(payload)
+            target = {"s1": "e1", "s2": "e2"}[payload["gloss"]["sense_id"]]
+            assignments = [
+                LLMAssignment(
+                    example_id=item["example_id"],
+                    accepted=item["example_id"] == target,
+                    sense_id=payload["gloss"]["sense_id"] if item["example_id"] == target else None,
+                    confidence=0.95 if item["example_id"] == target else 0.2,
+                    reason="matches gloss" if item["example_id"] == target else "does not match gloss",
+                )
+                for item in payload["examples"]
+            ]
+            return StructuredResult(
+                parsed=AssignmentResponse(assignments=assignments),
+                call_record=LLMCallRecord(model=kwargs["model"], prompt_version=kwargs["prompt_version"], temperature=0),
+            )
+
+    entries = [LemmaEntry(lemma="автомат", glosses=[
+        Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary"),
+        Gloss(sense_id="s2", lemma="автомат", gloss="пристрій", source="dictionary"),
+    ])]
+    fixture = FixtureGracClient({"автомат": [
+        {"example_id": "e1", "sentence": "Він узяв автомат до рук."},
+        {"example_id": "e2", "sentence": "Автомат працює без оператора."},
+    ]})
+    llm = GlossSpecificLLM()
+    final = run_shared(entries, tmp_path, AppConfig(), fixture, llm, resume=False)
+
+    assert len(llm.calls) == 2
+    assert all("gloss" in call and "glosses" not in call for call in llm.calls)
+    assert [item.example_id for item in final[0].glosses[0].examples] == ["e1"]
+    assert [item.example_id for item in final[0].glosses[1].examples] == ["e2"]
+
+
+def test_shared_pipeline_resolves_duplicate_gloss_assignments(tmp_path: Path):
+    class DuplicateAcceptingLLM:
+        def __init__(self):
+            self.config = AppConfig().llm
+
+        def structured(self, **kwargs):
+            payload = json.loads(kwargs["user"])
+            sense_id = payload["gloss"]["sense_id"]
+            confidence = 0.90 if sense_id == "s1" else 0.95
+            return StructuredResult(
+                parsed=AssignmentResponse(assignments=[LLMAssignment(
+                    example_id="e1", accepted=True, sense_id=sense_id,
+                    confidence=confidence, reason="matches gloss",
+                )]),
+                call_record=LLMCallRecord(model=kwargs["model"], prompt_version=kwargs["prompt_version"], temperature=0),
+            )
+
+    entries = [LemmaEntry(lemma="автомат", glosses=[
+        Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary"),
+        Gloss(sense_id="s2", lemma="автомат", gloss="пристрій", source="dictionary"),
+    ])]
+    fixture = FixtureGracClient({"автомат": [{"example_id": "e1", "sentence": "Контекст."}]})
+    final = run_shared(entries, tmp_path, AppConfig(), fixture, DuplicateAcceptingLLM(), resume=False)
+
+    assert final[0].glosses[0].examples == []
+    assert [item.example_id for item in final[0].glosses[1].examples] == ["e1"]
+    audit = json.loads((tmp_path / "audit" / "lemma_audit.jsonl").read_text(encoding="utf-8"))
+    assert audit["rejected_by_reason"]["duplicate_assignment_conflict"] == 1
 
 
 class _FakeResponse:

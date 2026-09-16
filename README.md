@@ -1,7 +1,7 @@
 # Ukrainian homonym pipeline
 
 This project implements two input workflows that converge on cached ГРАК example retrieval,
-OpenAI validation/sense assignment, and final dictionary aggregation.
+OpenAI embedding reranking, Luna validation/sense assignment, and final dictionary aggregation.
 
 The repository currently contains the source dictionary JSON. The implementation uses its
 `lemma_normalized` and `definition` fields for Workflow A and preserves source identifiers and
@@ -73,6 +73,22 @@ Sentences above 100 tokens are skipped because Bonito can truncate long matches;
 raw rows and skip reasons remain in the cache. Fewer examples may be returned if there
 are insufficient eligible sentences.
 
+The shared stage retrieves up to 1,000 GRAC sentences per lemma by default. It then
+embeds the complete candidate pool and every gloss with the configured OpenAI embedding
+model (`text-embedding-3-small` by default), calculates cosine similarity locally, and
+passes the top 50 candidates independently for each gloss to Luna. The same sentence can
+therefore be shortlisted for different glosses, but final assignment still keeps one
+sense per sentence. The exact shortlist and scores are stored in
+`grac/embedding_rankings.jsonl`; embedding request metadata is stored in
+`grac/embedding_calls.jsonl`. Set `embeddings.enabled: false` or use `--no-embeddings`
+to use deterministic GRAC order instead of semantic reranking.
+
+Embedding ranking is cached per lemma and includes the model, gloss inventory, GRAC
+candidate pool, and top-k setting in its cache key. A later validation-only rerun does
+not repeat GRAC or embedding requests. Ranked candidate provenance is copied into each
+validated example's `source_metadata`, including the embedding model, cosine score,
+rank, and candidate-pool size.
+
 Raw response snapshots, completed page caches and completed lemma results are stored
 under `outputs/grac/cache/`. Rerunning the same request reuses the cache without network
 calls; an interrupted run can reuse completed pages. `--force` refreshes results while
@@ -107,16 +123,22 @@ highest-confidence examples are selected, with original validation order breakin
 ties. All validation results remain in `validation/llm_assignments.jsonl`. The limit
 can be changed from the CLI with `--max-final-examples-per-sense`.
 
+GRAC candidates are retrieved once per lemma, but Luna validation is performed in
+separate batches for each gloss. This lets each sense receive its own examples. If the
+same sentence is accepted for multiple glosses, the pipeline keeps the highest-confidence
+assignment and records the other assignment as `duplicate_assignment_conflict`.
+
 The full workflow commands use compact, machine-readable terminal labels. The shared
 stage emits records like:
 
 ```text
 [filter] Removed 2 single-gloss lemmas. Processing 1749 of 1751 lemmas.
 [input] 1749 lemmas, 4260 glosses; 1749 lemmas have multiple glosses.
-[stage 2/3] GRAC retrieval and Luna validation started.
+[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started.
 
 [2/1749] аверс
-  GRAC candidates: 100
+  GRAC candidates: 1000
+  Embedding shortlist: up to 50/gloss (100 selected; 2000 scored pairs)
   Supported senses: 1/2
   Lemmas with 2+ supported senses: 1/1749
   Processed glosses: 4/4260
@@ -125,7 +147,9 @@ stage emits records like:
   Processed lemmas: 1749/1749
   Supported glosses: 6/4260
   Lemmas with 2+ supported senses: 1/1749
-  GRAC candidates: 174900
+  GRAC candidates: 1749000
+  Embedding pairs scored: 4260000
+  Embedding candidates sent to Luna: 213000
 ```
 
 Single-gloss lemmas are filtered before GRAC retrieval and validation. The filter is

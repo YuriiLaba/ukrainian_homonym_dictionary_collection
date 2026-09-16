@@ -24,6 +24,11 @@ def calculate_statistics(entries: list[FinalLemmaEntry], output_dir: str | Path,
 
     if audits:
         grac_candidates = sum(item.grac_candidates_retrieved for item in audits)
+        embedding_calls = sum(item.embedding_calls for item in audits)
+        embedding_cache_hits = sum(item.embedding_cache_hits for item in audits)
+        embedding_pairs_scored = sum(item.embedding_pairs_scored for item in audits)
+        embedding_candidates_selected = sum(item.embedding_candidates_selected for item in audits)
+        embedding_models = sorted({item.embedding_model for item in audits if item.embedding_model})
         rejected_count = sum(rejected_by_reason.values())
         accepted_before_cap = sum(item.accepted_before_final_cap for item in audits)
         validation_batches = sum(item.validation_batches for item in audits)
@@ -49,6 +54,11 @@ def calculate_statistics(entries: list[FinalLemmaEntry], output_dir: str | Path,
         input_glosses = sum(len(entry.glosses) for entry in entries)
         input_multi_gloss_lemmas = sum(len(entry.glosses) >= 2 for entry in entries)
         wikipedia_candidates = 0
+        embedding_calls = 0
+        embedding_cache_hits = 0
+        embedding_pairs_scored = 0
+        embedding_candidates_selected = 0
+        embedding_models = []
     stats: dict[str, Any] = {
         "run_id": run_id,
         "total_lemmas": len(entries),
@@ -64,6 +74,11 @@ def calculate_statistics(entries: list[FinalLemmaEntry], output_dir: str | Path,
         "wikipedia_candidates_retrieved": wikipedia_candidates,
         "terra_actions": dict(terra_actions),
         "grac_candidates_retrieved": grac_candidates,
+        "embedding_models": embedding_models,
+        "embedding_calls": embedding_calls,
+        "embedding_cache_hits": embedding_cache_hits,
+        "embedding_pairs_scored": embedding_pairs_scored,
+        "embedding_candidates_selected": embedding_candidates_selected,
         "accepted_examples": accepted,
         "accepted_examples_before_final_cap": accepted_before_cap,
         "examples_excluded_by_final_cap": max(accepted_before_cap - accepted, 0),

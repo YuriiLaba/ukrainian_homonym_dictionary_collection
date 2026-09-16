@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from homonym_pipeline.config import AppConfig
+from homonym_pipeline.embeddings.client import EmbeddingClient
 from homonym_pipeline.glosses.llm_augmentation import augment_glosses
 from homonym_pipeline.glosses.llm_augmentation import PROMPT_VERSION as GLOSS_PROMPT_VERSION
 from homonym_pipeline.glosses.wikipedia import WikipediaClient
@@ -24,12 +25,14 @@ logger = logging.getLogger(__name__)
 def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, config: AppConfig,
                             llm: LLMClient | None = None, grac: GracClient | None = None,
                             wikipedia: WikipediaClient | None = None, max_lemmas: int | None = None,
-                            resume: bool = True, run_id: str | None = None) -> list:
+                            resume: bool = True, run_id: str | None = None,
+                            embedder: EmbeddingClient | None = None) -> list:
     root = Path(output_dir)
     lemmas = parse_lemma_list(input_path)
     if max_lemmas:
         lemmas = lemmas[:max_lemmas]
     llm = llm or LLMClient(config.llm)
+    embedder = embedder or EmbeddingClient(config.embeddings)
     wikipedia = wikipedia or WikipediaClient()
     raw_path = root / "gloss_inventory" / "wikipedia_raw.jsonl"
     normalized_path = root / "gloss_inventory" / "wikipedia_normalized.jsonl"
@@ -117,6 +120,7 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
         config.grac, cache_dir=root / "grac" / "cache", resume=resume)
     try:
         return run_shared(entries, output_dir, config, grac, llm, resume=resume,
+                          embedder=embedder,
                           workflow="wikipedia_augmented", run_id=run_id,
                           stage_metadata=stage_metadata)
     finally:

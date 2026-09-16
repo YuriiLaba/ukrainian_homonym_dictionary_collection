@@ -23,6 +23,10 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--max-lemmas", type=int)
     parser.add_argument("--max-grac-examples", type=int)
+    parser.add_argument("--embedding-model")
+    parser.add_argument("--embedding-top-k", type=int)
+    parser.add_argument("--embedding-batch-size", type=int)
+    parser.add_argument("--no-embeddings", action="store_true")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--max-final-examples-per-sense", type=int)
     parser.add_argument("--llm-model", "--validation-model", dest="validation_model")
@@ -38,6 +42,14 @@ def main() -> None:
         config.pipeline.resume = False
     if args.max_grac_examples is not None:
         config.grac.max_examples_per_lemma = args.max_grac_examples
+    if args.embedding_model:
+        config.embeddings.model = args.embedding_model
+    if args.embedding_top_k is not None:
+        config.validation.max_candidates_per_gloss = args.embedding_top_k
+    if args.embedding_batch_size is not None:
+        config.embeddings.batch_size = args.embedding_batch_size
+    if args.no_embeddings:
+        config.embeddings.enabled = False
     if args.batch_size is not None:
         config.validation.batch_size = args.batch_size
     if args.max_final_examples_per_sense is not None:
@@ -46,12 +58,19 @@ def main() -> None:
         config.llm.model_validation = args.validation_model
     manifest = start_manifest("baseline", args.input, args.output, config)
     from homonym_pipeline.llm.client import LLMClient
+    from homonym_pipeline.embeddings.client import EmbeddingClient
     grac = None
     if args.grac_fixture:
         from homonym_pipeline.retrieval.grac import JsonFileGracClient
         grac = JsonFileGracClient(args.grac_fixture)
     try:
-        entries = run_baseline(args.input, args.output, config, llm=LLMClient(config.llm, dry_run=args.dry_run), grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume, run_id=manifest["run_id"])
+        entries = run_baseline(
+            args.input, args.output, config,
+            llm=LLMClient(config.llm, dry_run=args.dry_run),
+            embedder=EmbeddingClient(config.embeddings, dry_run=args.dry_run),
+            grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume,
+            run_id=manifest["run_id"],
+        )
         logging.info("[stage 3/3] Writing final dictionary, Hugging Face export, and statistics.")
         write_final(entries, args.output)
         write_huggingface(entries, args.output)
