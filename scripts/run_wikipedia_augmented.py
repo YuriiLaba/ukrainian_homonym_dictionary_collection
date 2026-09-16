@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--embedding-model")
     parser.add_argument("--embedding-top-k", type=int)
     parser.add_argument("--embedding-batch-size", type=int)
+    parser.add_argument("--embedding-max-concurrency", type=int)
     parser.add_argument("--no-embeddings", action="store_true")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--max-concurrency", type=int)
@@ -50,6 +51,8 @@ def main() -> None:
         config.validation.max_candidates_per_gloss = args.embedding_top_k
     if args.embedding_batch_size is not None:
         config.embeddings.batch_size = args.embedding_batch_size
+    if args.embedding_max_concurrency is not None:
+        config.embeddings.max_concurrency = args.embedding_max_concurrency
     if args.no_embeddings:
         config.embeddings.enabled = False
     if args.batch_size is not None:

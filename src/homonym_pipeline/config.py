@@ -46,6 +46,7 @@ class EmbeddingConfig(BaseModel):
     enabled: bool = True
     model: str = "text-embedding-3-small"
     batch_size: int = Field(default=100, gt=0)
+    max_concurrency: int = Field(default=4, ge=1)
     max_retries: int = Field(default=3, ge=0)
     api_key_env: str = "OPENAI_API_KEY"
     dimensions: int | None = Field(default=None, gt=0)

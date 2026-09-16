@@ -210,6 +210,53 @@ def test_openai_embedding_client_batches_requests_and_records_provenance():
     assert result.calls[0]["input_count"] == 2
 
 
+def test_openai_embedding_client_bounds_concurrency_and_preserves_order():
+    class Response:
+        id = "emb_concurrent"
+
+        def __init__(self, values):
+            self.data = [
+                {"index": index, "embedding": [float(value), 1.0]}
+                for index, value in enumerate(values)
+            ]
+
+        def model_dump(self, mode="json"):
+            return {"id": self.id, "model": "text-embedding-3-small", "data": self.data}
+
+    class Embeddings:
+        def __init__(self):
+            self.active = 0
+            self.max_active = 0
+            self.lock = threading.Lock()
+
+        def create(self, **kwargs):
+            with self.lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+            time.sleep(0.02)
+            with self.lock:
+                self.active -= 1
+            values = [int(text.removeprefix("text")) for text in kwargs["input"]]
+            return Response(values)
+
+    class OpenAI:
+        def __init__(self):
+            self.embeddings = Embeddings()
+
+    from homonym_pipeline.embeddings.client import EmbeddingClient
+
+    config = AppConfig().embeddings
+    config.batch_size = 1
+    config.max_concurrency = 2
+    api = OpenAI()
+    result = EmbeddingClient(config, client=api).embed_texts(["text0", "text1", "text2", "text3"])
+
+    assert api.embeddings.max_active == 2
+    assert [vector[0] for vector in result.vectors] == [0.0, 1.0, 2.0, 3.0]
+    assert [call["batch_index"] for call in result.calls] == [0, 1, 2, 3]
+    assert all(call["attempts"] == 1 for call in result.calls)
+
+
 def test_valid_assignment_and_invalid_sense_id_are_rejected():
     gloss = Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary")
     candidate = FixtureGracClient({"автомат": [{"sentence": "Він узяв автомат до рук.", "example_id": "e1"}]}).retrieve_examples("автомат", 10)[0]
@@ -256,6 +303,7 @@ def test_shared_pipeline_aggregates_and_resumes(tmp_path: Path, caplog):
     assert "  Supported senses: 1/2" in caplog.text
     assert "  Lemmas with 2+ supported senses: 0/1" in caplog.text
     assert "  Processed glosses: 2/2" in caplog.text
+    assert "  Processing time: " in caplog.text
     assert "[stage 2/3] Complete.\n  Processed lemmas: 1/1\n  Supported glosses: 1/2" in caplog.text
 
     class FailingGrac(FixtureGracClient):

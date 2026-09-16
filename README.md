@@ -83,6 +83,13 @@ sense per sentence. The exact shortlist and scores are stored in
 `grac/embedding_calls.jsonl`. Set `embeddings.enabled: false` or use `--no-embeddings`
 to use deterministic GRAC order instead of semantic reranking.
 
+Embedding batches run with bounded concurrency. `embeddings.batch_size` controls how many
+texts are sent in one API request, while `embeddings.max_concurrency` controls how many
+of those requests can be active at once (default: 4). Use
+`--embedding-max-concurrency` to override it for a run. All response vectors are combined
+in the original input order before cosine scoring; request provenance includes batch timing,
+attempt count, and input hashes.
+
 Embedding ranking is cached per lemma and includes the model, gloss inventory, GRAC
 candidate pool, and top-k setting in its cache key. A later validation-only rerun does
 not repeat GRAC or embedding requests. Ranked candidate provenance is copied into each
@@ -90,8 +97,8 @@ validated example's `source_metadata`, including the embedding model, cosine sco
 rank, and candidate-pool size.
 
 Luna validation uses bounded parallelism: independent gloss/batch requests run in a
-worker pool while GRAC retrieval and embedding ranking remain sequential and
-rate-limited. The default is eight concurrent Luna requests; configure
+worker pool while GRAC retrieval remains sequential. The default is eight concurrent Luna
+requests; configure
 `validation.max_concurrency` or pass `--max-concurrency`. Results and JSONL writes are
 ordered deterministically after requests complete, and each request retains its own
 cache key and OpenAI request identifier.
@@ -141,7 +148,7 @@ stage emits records like:
 ```text
 [filter] Removed 2 single-gloss lemmas. Processing 1749 of 1751 lemmas.
 [input] 1749 lemmas, 4260 glosses; 1749 lemmas have multiple glosses.
-[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started. Luna concurrency: 8.
+[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started. Embedding concurrency: 4; Luna concurrency: 8.
 
 [2/1749] аверс
   GRAC candidates: 1000
@@ -149,6 +156,7 @@ stage emits records like:
   Supported senses: 1/2
   Lemmas with 2+ supported senses: 1/1749
   Processed glosses: 4/4260
+  Processing time: 12.37 seconds
 
 [stage 2/3] Complete.
   Processed lemmas: 1749/1749

@@ -84,7 +84,8 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     )
     logger.info(
         "[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started."
-        " Luna concurrency: %d.",
+        " Embedding concurrency: %d; Luna concurrency: %d.",
+        config.embeddings.max_concurrency,
         config.validation.max_concurrency,
     )
 
@@ -295,13 +296,15 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             lemma_glosses_with_examples = sum(1 for sense in final_entry.glosses if sense.examples)
             if lemma_glosses_with_examples >= 2:
                 lemmas_with_multiple_glosses_with_examples += 1
+            lemma_elapsed = time.perf_counter() - lemma_started
             logger.info(
                 "[%d/%d] %s\n"
                 "  GRAC candidates: %d\n"
                 "  Embedding shortlist: up to %d/gloss (%d selected; %d scored pairs)\n"
                 "  Supported senses: %d/%d\n"
                 "  Lemmas with 2+ supported senses: %d/%d\n"
-                "  Processed glosses: %d/%d",
+                "  Processed glosses: %d/%d\n"
+                "  Processing time: %.2f seconds",
                 index,
                 total_lemmas,
                 entry.lemma,
@@ -315,8 +318,10 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 total_lemmas,
                 processed_glosses,
                 total_glosses,
+                lemma_elapsed,
             )
         except Exception as error:
+            lemma_elapsed = time.perf_counter() - lemma_started
             append_jsonl(failures_path, FailureRecord(stage="shared", lemma=entry.lemma,
                                                       error_type=type(error).__name__, message=str(error)))
             audit = LemmaAuditRecord(
@@ -343,11 +348,12 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 **audit.model_dump(mode="json"),
             })
             logger.error(
-                "[error %d/%d] %s — %s. Details saved to %s.",
+                "[error %d/%d] %s — %s. Processing time: %.2f seconds. Details saved to %s.",
                 index,
                 total_lemmas,
                 entry.lemma,
                 error,
+                lemma_elapsed,
                 failures_path,
             )
     logger.info(
