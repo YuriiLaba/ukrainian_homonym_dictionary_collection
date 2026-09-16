@@ -28,6 +28,7 @@ def main() -> None:
     parser.add_argument("--embedding-batch-size", type=int)
     parser.add_argument("--no-embeddings", action="store_true")
     parser.add_argument("--batch-size", type=int)
+    parser.add_argument("--max-concurrency", type=int)
     parser.add_argument("--max-final-examples-per-sense", type=int)
     parser.add_argument("--llm-model", "--validation-model", dest="validation_model")
     parser.add_argument("--force", action="store_true")
@@ -52,6 +53,8 @@ def main() -> None:
         config.embeddings.enabled = False
     if args.batch_size is not None:
         config.validation.batch_size = args.batch_size
+    if args.max_concurrency is not None:
+        config.validation.max_concurrency = args.max_concurrency
     if args.max_final_examples_per_sense is not None:
         config.validation.max_final_examples_per_sense = args.max_final_examples_per_sense
     if args.validation_model:

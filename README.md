@@ -89,6 +89,13 @@ not repeat GRAC or embedding requests. Ranked candidate provenance is copied int
 validated example's `source_metadata`, including the embedding model, cosine score,
 rank, and candidate-pool size.
 
+Luna validation uses bounded parallelism: independent gloss/batch requests run in a
+worker pool while GRAC retrieval and embedding ranking remain sequential and
+rate-limited. The default is eight concurrent Luna requests; configure
+`validation.max_concurrency` or pass `--max-concurrency`. Results and JSONL writes are
+ordered deterministically after requests complete, and each request retains its own
+cache key and OpenAI request identifier.
+
 Raw response snapshots, completed page caches and completed lemma results are stored
 under `outputs/grac/cache/`. Rerunning the same request reuses the cache without network
 calls; an interrupted run can reuse completed pages. `--force` refreshes results while
@@ -134,7 +141,7 @@ stage emits records like:
 ```text
 [filter] Removed 2 single-gloss lemmas. Processing 1749 of 1751 lemmas.
 [input] 1749 lemmas, 4260 glosses; 1749 lemmas have multiple glosses.
-[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started.
+[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started. Luna concurrency: 8.
 
 [2/1749] аверс
   GRAC candidates: 1000

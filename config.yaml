@@ -17,12 +17,13 @@ grac:
   poll_attempts: 15
   request_interval_seconds: 0.5
   max_sentence_tokens: 100
-  seed: null  # corpus order; set an integer for reproducible random sentence ranks
+  seed: 42  # corpus order; set an integer for reproducible random sentence ranks
 validation:
   min_confidence: 0.8
   batch_size: 20
+  max_concurrency: 8
   max_final_examples_per_sense: 5
-  max_candidates_per_gloss: 50
+  max_candidates_per_gloss: 40
 embeddings:
   enabled: true
   model: text-embedding-3-small

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +82,11 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
         total_glosses,
         sum(len(entry.glosses) >= 2 for entry in entries),
     )
-    logger.info("[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started.")
+    logger.info(
+        "[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started."
+        " Luna concurrency: %d.",
+        config.validation.max_concurrency,
+    )
 
     for index, entry in enumerate(entries, start=1):
         lemma_started = time.perf_counter()
@@ -162,12 +167,19 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 for call in ranking.embedding_calls:
                     append_jsonl(embedding_calls_path, {"cache_key": ranking_key, **call})
 
+            # Build all cache keys first, then execute only cache misses in a
+            # bounded pool. Results are written below in job order, keeping the
+            # JSONL artifacts deterministic even though requests finish out of order.
+            validation_results = []
+            pending_jobs = []
+            job_order = 0
             for gloss in entry.glosses:
                 gloss_candidates = ranked_by_sense.get(gloss.sense_id, [])
                 for start in range(0, len(gloss_candidates), config.validation.batch_size):
                     batch = gloss_candidates[start:start + config.validation.batch_size]
                     validation_batches += 1
                     if getattr(llm, "dry_run", False):
+                        job_order += 1
                         continue
                     validation_key = content_hash({"stage": "gloss_validation", "lemma": entry.lemma,
                                                    "sense_id": gloss.sense_id, "gloss": gloss.gloss,
@@ -175,25 +187,41 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                                                    "model": config.llm.model_validation,
                                                    "prompt_version": "grac_gloss_example_validation_v1"})
                     cached = cache.get(validation_key) if resume else None
-                    from_cache = cached is not None
-                    if from_cache:
+                    if cached is not None:
                         validation_cache_hits += 1
-                    if cached:
                         from homonym_pipeline.models import ValidatedExample
                         validated = [ValidatedExample.model_validate(item) for item in cached["validated"]]
+                        validation_results.append((job_order, validation_key, gloss, batch, validated, None, True))
                     else:
-                        validated, call_record = validate_gloss_batch(entry.lemma, gloss, batch, llm)
-                        record = {"cache_key": validation_key, "lemma": entry.lemma,
-                                  "sense_id": gloss.sense_id, "gloss": gloss.gloss,
-                                  "validation_mode": "one_gloss_at_a_time",
-                                  "validated": [item.model_dump(mode="json") for item in validated]}
-                        append_jsonl(assignment_path, record)
-                        cache[validation_key] = record
-                        append_jsonl(calls_path, {"cache_key": validation_key, **call_record.model_dump(mode="json")})
-                    for item in validated:
-                        validated_items.append(item)
-                        if not item.accepted and not from_cache:
-                            append_jsonl(rejected_path, item)
+                        pending_jobs.append((job_order, validation_key, gloss, batch))
+                    job_order += 1
+
+            if pending_jobs:
+                with ThreadPoolExecutor(max_workers=config.validation.max_concurrency) as executor:
+                    futures = [
+                        (job, executor.submit(validate_gloss_batch, entry.lemma, gloss, batch, llm))
+                        for job_order, validation_key, gloss, batch in pending_jobs
+                        for job in [(job_order, validation_key, gloss, batch)]
+                    ]
+                    for (job_order, validation_key, gloss, batch), future in futures:
+                        validated, call_record = future.result()
+                        validation_results.append((job_order, validation_key, gloss, batch, validated, call_record, False))
+
+            for _, validation_key, gloss, batch, validated, call_record, from_cache in sorted(
+                validation_results, key=lambda item: item[0]
+            ):
+                if not from_cache:
+                    record = {"cache_key": validation_key, "lemma": entry.lemma,
+                              "sense_id": gloss.sense_id, "gloss": gloss.gloss,
+                              "validation_mode": "one_gloss_at_a_time",
+                              "validated": [item.model_dump(mode="json") for item in validated]}
+                    append_jsonl(assignment_path, record)
+                    cache[validation_key] = record
+                    append_jsonl(calls_path, {"cache_key": validation_key, **call_record.model_dump(mode="json")})
+                for item in validated:
+                    validated_items.append(item)
+                    if not item.accepted and not from_cache:
+                        append_jsonl(rejected_path, item)
 
             accepted_by_example: dict[str, list[tuple[int, ValidatedExample]]] = defaultdict(list)
             for order, item in enumerate(validated_items):

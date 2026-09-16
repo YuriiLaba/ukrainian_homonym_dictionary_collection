@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -134,6 +136,42 @@ def test_shared_pipeline_sends_only_embedding_shortlist_to_luna(tmp_path: Path):
     assert [call["examples"][0]["example_id"] for call in llm.calls] == ["e1", "e2"]
     assert [item.example_id for item in final[0].glosses[0].examples] == ["e1"]
     assert [item.example_id for item in final[0].glosses[1].examples] == ["e2"]
+
+
+def test_shared_pipeline_bounds_luna_concurrency(tmp_path: Path):
+    class TrackingLLM:
+        def __init__(self):
+            self.config = AppConfig().llm
+            self.active = 0
+            self.max_active = 0
+            self.lock = threading.Lock()
+
+        def structured(self, **kwargs):
+            with self.lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+            time.sleep(0.02)
+            with self.lock:
+                self.active -= 1
+            return StructuredResult(
+                parsed=AssignmentResponse(assignments=[]),
+                call_record=LLMCallRecord(model=kwargs["model"], prompt_version=kwargs["prompt_version"]),
+            )
+
+    config = AppConfig()
+    config.validation.batch_size = 1
+    config.validation.max_concurrency = 2
+    entries = [LemmaEntry(lemma="автомат", glosses=[
+        Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary"),
+        Gloss(sense_id="s2", lemma="автомат", gloss="пристрій", source="dictionary"),
+    ])]
+    fixture = FixtureGracClient({"автомат": [
+        {"example_id": "e1", "sentence": "Він узяв автомат до рук."},
+        {"example_id": "e2", "sentence": "Автомат працює без оператора."},
+    ]})
+    llm = TrackingLLM()
+    run_shared(entries, tmp_path, config, fixture, llm, resume=False)
+    assert llm.max_active == 2
 
 
 def test_openai_embedding_client_batches_requests_and_records_provenance():
