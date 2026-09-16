@@ -43,12 +43,21 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     stage_metadata = stage_metadata or {}
     cache = latest_by_cache_key(assignment_path)
     candidate_cache = latest_by_cache_key(candidate_path)
+    dropped_single_gloss_lemmas = sum(len(entry.glosses) < 2 for entry in entries)
+    if dropped_single_gloss_lemmas:
+        logger.info(
+            "[filter] dropped_single_gloss_lemmas=%d remaining_lemmas=%d/%d",
+            dropped_single_gloss_lemmas,
+            len(entries) - dropped_single_gloss_lemmas,
+            len(entries),
+        )
+        entries = [entry for entry in entries if len(entry.glosses) >= 2]
     finals: list[FinalLemmaEntry] = []
     total_lemmas = len(entries)
     processed_lemmas = 0
     processed_glosses = 0
     glosses_with_examples = 0
-    lemmas_with_multiple_glosses = 0
+    lemmas_with_multiple_glosses_with_examples = 0
     grac_candidates_retrieved = 0
     logger.info(
         "[input] lemmas=%d glosses=%d multi_gloss_lemmas=%d",
@@ -161,19 +170,21 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             processed_glosses += len(final_entry.glosses)
             glosses_with_examples += sum(1 for sense in final_entry.glosses if sense.examples)
             grac_candidates_retrieved += len(candidate_models)
-            if len(final_entry.glosses) >= 2:
-                lemmas_with_multiple_glosses += 1
+            lemma_glosses_with_examples = sum(1 for sense in final_entry.glosses if sense.examples)
+            if lemma_glosses_with_examples >= 2:
+                lemmas_with_multiple_glosses_with_examples += 1
             logger.info(
                 "[progress] %d/%d lemma=%s lemma_grac_candidates=%d lemma_glosses=%d "
-                "lemma_glosses_with_examples=%d cumulative_multi_gloss_lemmas=%d "
+                "lemma_glosses_with_examples=%d cumulative_multi_gloss_lemmas_with_examples=%d/%d "
                 "cumulative_glosses=%d/%d",
                 index,
                 total_lemmas,
                 entry.lemma,
                 len(candidate_models),
                 len(final_entry.glosses),
-                sum(1 for sense in final_entry.glosses if sense.examples),
-                lemmas_with_multiple_glosses,
+                lemma_glosses_with_examples,
+                lemmas_with_multiple_glosses_with_examples,
+                total_lemmas,
                 processed_glosses,
                 sum(len(item.glosses) for item in entries),
             )
@@ -208,11 +219,12 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             )
     logger.info(
         "[summary] processed_lemmas=%d glosses=%d glosses_with_examples=%d "
-        "multi_gloss_lemmas=%d grac_candidates=%d",
+        "multi_gloss_lemmas_with_examples=%d/%d grac_candidates=%d",
         processed_lemmas,
         processed_glosses,
         glosses_with_examples,
-        lemmas_with_multiple_glosses,
+        lemmas_with_multiple_glosses_with_examples,
+        total_lemmas,
         grac_candidates_retrieved,
     )
     return finals

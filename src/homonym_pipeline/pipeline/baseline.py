@@ -19,6 +19,15 @@ def run_baseline(input_path: str | Path, output_dir: str | Path, config: AppConf
                  llm: LLMClient | None = None, grac: GracClient | None = None, max_lemmas: int | None = None,
                  resume: bool = True, run_id: str | None = None) -> list:
     entries = parse_dictionary(input_path)
+    input_lemma_count = len(entries)
+    entries = [entry for entry in entries if len(entry.glosses) >= 2]
+    if len(entries) < input_lemma_count:
+        logger.info(
+            "[filter] dropped_single_gloss_lemmas=%d remaining_lemmas=%d/%d",
+            input_lemma_count - len(entries),
+            len(entries),
+            input_lemma_count,
+        )
     if max_lemmas:
         entries = entries[:max_lemmas]
     for entry in entries:

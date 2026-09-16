@@ -228,7 +228,8 @@ def test_shared_pipeline_live_adapter_dry_run_and_cache_identity(tmp_path: Path)
     calls = []
     grac = client_for(transport_for(LINES, calls))
     entries = [LemmaEntry(lemma="автомат", glosses=[
-        Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary")])]
+        Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary"),
+        Gloss(sense_id="s2", lemma="автомат", gloss="пристрій", source="dictionary")])]
     class NoLLM:
         dry_run = True
         def structured(self, **kwargs):

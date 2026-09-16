@@ -113,14 +113,20 @@ stage emits records like:
 ```text
 [input] lemmas=3 glosses=7 multi_gloss_lemmas=2
 [stage] grac_retrieval_and_luna_validation total_lemmas=3
-[progress] 2/3 lemma=абориген lemma_grac_candidates=12 lemma_glosses=1 lemma_glosses_with_examples=1 cumulative_multi_gloss_lemmas=1 cumulative_glosses=3/7
-[summary] processed_lemmas=3 glosses=7 glosses_with_examples=6 multi_gloss_lemmas=2 grac_candidates=34
+[progress] 2/1751 lemma=аверс lemma_grac_candidates=100 lemma_glosses=2 lemma_glosses_with_examples=1 cumulative_multi_gloss_lemmas_with_examples=1/1751 cumulative_glosses=4/4262
+[summary] processed_lemmas=3 glosses=7 glosses_with_examples=6 multi_gloss_lemmas_with_examples=1/3 grac_candidates=34
 ```
 
+Single-gloss lemmas are filtered before GRAC retrieval and validation. The filter is
+reported as, for example, `[filter] dropped_single_gloss_lemmas=2 remaining_lemmas=1749/1751`.
+Workflow B performs Wikipedia/Terra augmentation first so that a lemma can acquire a
+second evidence-supported gloss before this filter is applied.
+
 The progress record includes the current lemma's GRAC candidate count, gloss count,
-glosses with at least one final validated example, and cumulative counters. Detailed
-validation records remain in the output JSONL files; the manifest and audit files are
-the authoritative source for later statistical analysis.
+glosses with at least one final validated example, and the cumulative number of lemmas
+with at least two such glosses out of the total input lemmas. Detailed validation
+records remain in the output JSONL files; the manifest and audit files are the
+authoritative source for later statistical analysis.
 
 Each CLI run also writes `run_manifest.json` and `config.snapshot.yaml` at the output
 root. The manifest records the workflow, input SHA-256, configuration, Python and

@@ -93,15 +93,17 @@ def test_shared_pipeline_aggregates_and_resumes(tmp_path: Path, caplog):
     config = AppConfig()
     config.validation.min_confidence = 0.8
     gloss = Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary")
-    entries = [LemmaEntry(lemma="автомат", glosses=[gloss])]
+    second_gloss = Gloss(sense_id="s2", lemma="автомат", gloss="пристрій", source="dictionary")
+    entries = [LemmaEntry(lemma="автомат", glosses=[gloss, second_gloss])]
     fixture = FixtureGracClient({"автомат": [{"sentence": "Він узяв автомат до рук.", "example_id": "e1"}]})
     fake = FakeLLM(AssignmentResponse(assignments=[LLMAssignment(example_id="e1", accepted=True, sense_id="s1", confidence=0.95, reason="ok")]))
     first = run_shared(entries, tmp_path, config, fixture, fake, resume=True)
     assert first[0].glosses[0].examples[0].example_id == "e1"
-    assert "[input] lemmas=1 glosses=1 multi_gloss_lemmas=0" in caplog.text
+    assert "[input] lemmas=1 glosses=2 multi_gloss_lemmas=1" in caplog.text
     assert "[progress] 1/1 lemma=автомат lemma_grac_candidates=1" in caplog.text
     assert "lemma_glosses_with_examples=1" in caplog.text
-    assert "[summary] processed_lemmas=1 glosses=1 glosses_with_examples=1" in caplog.text
+    assert "cumulative_multi_gloss_lemmas_with_examples=0/1" in caplog.text
+    assert "[summary] processed_lemmas=1 glosses=2 glosses_with_examples=1" in caplog.text
 
     class FailingGrac(FixtureGracClient):
         def retrieve_examples(self, lemma, max_examples, seed=None):
@@ -109,6 +111,27 @@ def test_shared_pipeline_aggregates_and_resumes(tmp_path: Path, caplog):
 
     second = run_shared(entries, tmp_path, config, FailingGrac(fixture.examples_by_lemma), fake, resume=True)
     assert second[0].glosses[0].examples[0].example_id == "e1"
+
+
+def test_shared_pipeline_drops_single_gloss_lemmas(tmp_path: Path, caplog):
+    caplog.set_level(logging.INFO, logger="homonym_pipeline.pipeline.shared")
+    config = AppConfig()
+    gloss = Gloss(sense_id="s1", lemma="однозначне", gloss="значення", source="dictionary")
+
+    class FailingGrac(FixtureGracClient):
+        def retrieve_examples(self, lemma, max_examples, seed=None):
+            raise AssertionError("single-gloss lemmas must be filtered before GRAC retrieval")
+
+    result = run_shared(
+        [LemmaEntry(lemma="однозначне", glosses=[gloss])],
+        tmp_path,
+        config,
+        FailingGrac({}),
+        FakeLLM(AssignmentResponse(assignments=[])),
+        resume=True,
+    )
+    assert result == []
+    assert "[filter] dropped_single_gloss_lemmas=1 remaining_lemmas=0/1" in caplog.text
 
 
 class _FakeResponse:
@@ -362,6 +385,7 @@ def test_uncertain_merge_metadata_reaches_rich_final_dictionary(tmp_path: Path):
 
 def test_final_examples_are_capped_per_sense_by_confidence(tmp_path: Path):
     gloss = Gloss(sense_id="s1", lemma="автомат", gloss="Зброя", source="dictionary")
+    second_gloss = Gloss(sense_id="s2", lemma="автомат", gloss="Пристрій", source="dictionary")
     fixture = FixtureGracClient({
         "автомат": [
             {"example_id": "e1", "sentence": "Приклад один."},
@@ -376,7 +400,7 @@ def test_final_examples_are_capped_per_sense_by_confidence(tmp_path: Path):
     ]))
     config = AppConfig()
     config.validation.max_final_examples_per_sense = 2
-    final = run_shared([LemmaEntry(lemma="автомат", glosses=[gloss])], tmp_path, config, fixture, fake, resume=False)
+    final = run_shared([LemmaEntry(lemma="автомат", glosses=[gloss, second_gloss])], tmp_path, config, fixture, fake, resume=False)
     assert [item.example_id for item in final[0].glosses[0].examples] == ["e2", "e3"]
 
 
