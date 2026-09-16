@@ -40,7 +40,7 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
     normalized_cache = latest_by_cache_key(normalized_path)
     entries: list[LemmaEntry] = []
     stage_metadata: dict[str, dict[str, object]] = {}
-    logger.info("[stage] wikipedia_retrieval_and_terra_augmentation total_lemmas=%d", len(lemmas))
+    logger.info("[stage 1/3] Wikipedia retrieval and Terra gloss augmentation started.")
     for index, lemma in enumerate(lemmas, start=1):
         lemma_started = time.perf_counter()
         candidates = []
@@ -84,14 +84,14 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
             }
             entries.append(LemmaEntry(lemma=lemma, glosses=glosses))
             logger.info(
-                "[progress] %d/%d lemma=%s wikipedia_candidates=%d lemma_glosses=%d "
-                "cumulative_multi_gloss_lemmas=%d",
+                "[%d/%d] %s\n"
+                "  Wikipedia candidates: %d\n"
+                "  Glosses after Terra: %d",
                 index,
                 len(lemmas),
                 lemma,
                 len(candidates),
                 len(glosses),
-                sum(1 for item in entries if len(item.glosses) >= 2),
             )
         except Exception as error:
             append_jsonl(failures_path, FailureRecord(stage="wikipedia_augmentation", lemma=lemma,
@@ -111,8 +111,7 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
                 "cache_key": content_hash({"stage": "lemma_audit", "run_id": run_id or "untracked", "lemma": lemma}),
                 **failed_audit.model_dump(mode="json"),
             })
-            logger.error("[error] stage=wikipedia_augmentation progress=%d/%d lemma=%s error=%s",
-                         index, len(lemmas), lemma, error)
+            logger.error("[error %d/%d] %s — %s.", index, len(lemmas), lemma, error)
     owns_grac = grac is None
     grac = grac or GracClient.from_config(
         config.grac, cache_dir=root / "grac" / "cache", resume=resume)

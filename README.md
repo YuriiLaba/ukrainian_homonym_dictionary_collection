@@ -111,14 +111,25 @@ The full workflow commands use compact, machine-readable terminal labels. The sh
 stage emits records like:
 
 ```text
-[input] lemmas=3 glosses=7 multi_gloss_lemmas=2
-[stage] grac_retrieval_and_luna_validation total_lemmas=3
-[progress] 2/1751 lemma=аверс lemma_grac_candidates=100 lemma_glosses=2 lemma_glosses_with_examples=1 cumulative_multi_gloss_lemmas_with_examples=1/1751 cumulative_glosses=4/4262
-[summary] processed_lemmas=3 glosses=7 glosses_with_examples=6 multi_gloss_lemmas_with_examples=1/3 grac_candidates=34
+[filter] Removed 2 single-gloss lemmas. Processing 1749 of 1751 lemmas.
+[input] 1749 lemmas, 4260 glosses; 1749 lemmas have multiple glosses.
+[stage 2/3] GRAC retrieval and Luna validation started.
+
+[2/1749] аверс
+  GRAC candidates: 100
+  Supported senses: 1/2
+  Lemmas with 2+ supported senses: 1/1749
+  Processed glosses: 4/4260
+
+[stage 2/3] Complete.
+  Processed lemmas: 1749/1749
+  Supported glosses: 6/4260
+  Lemmas with 2+ supported senses: 1/1749
+  GRAC candidates: 174900
 ```
 
 Single-gloss lemmas are filtered before GRAC retrieval and validation. The filter is
-reported as, for example, `[filter] dropped_single_gloss_lemmas=2 remaining_lemmas=1749/1751`.
+reported as, for example, `[filter] Removed 2 single-gloss lemmas. Processing 1749 of 1751 lemmas.`
 Workflow B performs Wikipedia/Terra augmentation first so that a lemma can acquire a
 second evidence-supported gloss before this filter is applied.
 

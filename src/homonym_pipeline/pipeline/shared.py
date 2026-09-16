@@ -46,7 +46,7 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     dropped_single_gloss_lemmas = sum(len(entry.glosses) < 2 for entry in entries)
     if dropped_single_gloss_lemmas:
         logger.info(
-            "[filter] dropped_single_gloss_lemmas=%d remaining_lemmas=%d/%d",
+            "[filter] Removed %d single-gloss lemmas. Processing %d of %d lemmas.",
             dropped_single_gloss_lemmas,
             len(entries) - dropped_single_gloss_lemmas,
             len(entries),
@@ -59,13 +59,14 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     glosses_with_examples = 0
     lemmas_with_multiple_glosses_with_examples = 0
     grac_candidates_retrieved = 0
+    total_glosses = sum(len(entry.glosses) for entry in entries)
     logger.info(
-        "[input] lemmas=%d glosses=%d multi_gloss_lemmas=%d",
+        "[input] %d lemmas, %d glosses; %d lemmas have multiple glosses.",
         total_lemmas,
-        sum(len(entry.glosses) for entry in entries),
+        total_glosses,
         sum(len(entry.glosses) >= 2 for entry in entries),
     )
-    logger.info("[stage] grac_retrieval_and_luna_validation total_lemmas=%d", total_lemmas)
+    logger.info("[stage 2/3] GRAC retrieval and Luna validation started.")
 
     for index, entry in enumerate(entries, start=1):
         lemma_started = time.perf_counter()
@@ -174,19 +175,21 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             if lemma_glosses_with_examples >= 2:
                 lemmas_with_multiple_glosses_with_examples += 1
             logger.info(
-                "[progress] %d/%d lemma=%s lemma_grac_candidates=%d lemma_glosses=%d "
-                "lemma_glosses_with_examples=%d cumulative_multi_gloss_lemmas_with_examples=%d/%d "
-                "cumulative_glosses=%d/%d",
+                "[%d/%d] %s\n"
+                "  GRAC candidates: %d\n"
+                "  Supported senses: %d/%d\n"
+                "  Lemmas with 2+ supported senses: %d/%d\n"
+                "  Processed glosses: %d/%d",
                 index,
                 total_lemmas,
                 entry.lemma,
                 len(candidate_models),
-                len(final_entry.glosses),
                 lemma_glosses_with_examples,
+                len(final_entry.glosses),
                 lemmas_with_multiple_glosses_with_examples,
                 total_lemmas,
                 processed_glosses,
-                sum(len(item.glosses) for item in entries),
+                total_glosses,
             )
         except Exception as error:
             append_jsonl(failures_path, FailureRecord(stage="shared", lemma=entry.lemma,
@@ -210,7 +213,7 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 **audit.model_dump(mode="json"),
             })
             logger.error(
-                "[%d/%d] %s — failed: %s (details saved to %s)",
+                "[error %d/%d] %s — %s. Details saved to %s.",
                 index,
                 total_lemmas,
                 entry.lemma,
@@ -218,11 +221,15 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 failures_path,
             )
     logger.info(
-        "[summary] processed_lemmas=%d glosses=%d glosses_with_examples=%d "
-        "multi_gloss_lemmas_with_examples=%d/%d grac_candidates=%d",
+        "[stage 2/3] Complete.\n"
+        "  Processed lemmas: %d/%d\n"
+        "  Supported glosses: %d/%d\n"
+        "  Lemmas with 2+ supported senses: %d/%d\n"
+        "  GRAC candidates: %d",
         processed_lemmas,
-        processed_glosses,
+        total_lemmas,
         glosses_with_examples,
+        total_glosses,
         lemmas_with_multiple_glosses_with_examples,
         total_lemmas,
         grac_candidates_retrieved,

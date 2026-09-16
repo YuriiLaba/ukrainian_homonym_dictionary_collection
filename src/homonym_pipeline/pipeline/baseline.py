@@ -23,7 +23,7 @@ def run_baseline(input_path: str | Path, output_dir: str | Path, config: AppConf
     entries = [entry for entry in entries if len(entry.glosses) >= 2]
     if len(entries) < input_lemma_count:
         logger.info(
-            "[filter] dropped_single_gloss_lemmas=%d remaining_lemmas=%d/%d",
+            "[filter] Removed %d single-gloss lemmas. Processing %d of %d lemmas.",
             input_lemma_count - len(entries),
             len(entries),
             input_lemma_count,

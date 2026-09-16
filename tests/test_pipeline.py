@@ -99,11 +99,12 @@ def test_shared_pipeline_aggregates_and_resumes(tmp_path: Path, caplog):
     fake = FakeLLM(AssignmentResponse(assignments=[LLMAssignment(example_id="e1", accepted=True, sense_id="s1", confidence=0.95, reason="ok")]))
     first = run_shared(entries, tmp_path, config, fixture, fake, resume=True)
     assert first[0].glosses[0].examples[0].example_id == "e1"
-    assert "[input] lemmas=1 glosses=2 multi_gloss_lemmas=1" in caplog.text
-    assert "[progress] 1/1 lemma=автомат lemma_grac_candidates=1" in caplog.text
-    assert "lemma_glosses_with_examples=1" in caplog.text
-    assert "cumulative_multi_gloss_lemmas_with_examples=0/1" in caplog.text
-    assert "[summary] processed_lemmas=1 glosses=2 glosses_with_examples=1" in caplog.text
+    assert "[input] 1 lemmas, 2 glosses; 1 lemmas have multiple glosses." in caplog.text
+    assert "[1/1] автомат\n  GRAC candidates: 1" in caplog.text
+    assert "  Supported senses: 1/2" in caplog.text
+    assert "  Lemmas with 2+ supported senses: 0/1" in caplog.text
+    assert "  Processed glosses: 2/2" in caplog.text
+    assert "[stage 2/3] Complete.\n  Processed lemmas: 1/1\n  Supported glosses: 1/2" in caplog.text
 
     class FailingGrac(FixtureGracClient):
         def retrieve_examples(self, lemma, max_examples, seed=None):
@@ -131,7 +132,7 @@ def test_shared_pipeline_drops_single_gloss_lemmas(tmp_path: Path, caplog):
         resume=True,
     )
     assert result == []
-    assert "[filter] dropped_single_gloss_lemmas=1 remaining_lemmas=0/1" in caplog.text
+    assert "[filter] Removed 1 single-gloss lemmas. Processing 0 of 1 lemmas." in caplog.text
 
 
 class _FakeResponse:

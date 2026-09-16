@@ -52,7 +52,7 @@ def main() -> None:
         grac = JsonFileGracClient(args.grac_fixture)
     try:
         entries = run_baseline(args.input, args.output, config, llm=LLMClient(config.llm, dry_run=args.dry_run), grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume, run_id=manifest["run_id"])
-        logging.info("[stage] writing_final_dictionary_huggingface_export_and_statistics")
+        logging.info("[stage 3/3] Writing final dictionary, Hugging Face export, and statistics.")
         write_final(entries, args.output)
         write_huggingface(entries, args.output)
         stats = calculate_statistics(entries, args.output, run_id=manifest["run_id"])
