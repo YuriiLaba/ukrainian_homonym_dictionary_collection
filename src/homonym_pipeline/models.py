@@ -204,6 +204,9 @@ class LemmaAuditRecord(BaseModel):
     embedding_cache_hits: int = 0
     embedding_pairs_scored: int = 0
     embedding_candidates_selected: int = 0
+    embedding_exact_duplicates_removed: int = 0
+    embedding_mmr_enabled: bool = False
+    embedding_mmr_lambda: float | None = None
     validation_batches: int = 0
     validation_cache_hits: int = 0
     llm_assignments: int = 0

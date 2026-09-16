@@ -29,6 +29,9 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--max-concurrency", type=int)
     parser.add_argument("--max-final-examples-per-sense", type=int)
+    parser.add_argument("--mmr-lambda", type=float)
+    parser.add_argument("--no-mmr", action="store_true")
+    parser.add_argument("--no-exact-deduplication", action="store_true")
     parser.add_argument("--llm-model", "--validation-model", dest="validation_model")
     parser.add_argument("--gloss-model")
     parser.add_argument("--force", action="store_true")
@@ -61,6 +64,12 @@ def main() -> None:
         config.validation.max_concurrency = args.max_concurrency
     if args.max_final_examples_per_sense is not None:
         config.validation.max_final_examples_per_sense = args.max_final_examples_per_sense
+    if args.mmr_lambda is not None:
+        config.validation.mmr_lambda = args.mmr_lambda
+    if args.no_mmr:
+        config.validation.mmr_enabled = False
+    if args.no_exact_deduplication:
+        config.validation.exact_deduplication = False
     if args.validation_model:
         config.llm.model_validation = args.validation_model
     if args.gloss_model:

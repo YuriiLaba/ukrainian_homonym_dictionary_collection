@@ -40,6 +40,14 @@ def calculate_statistics(entries: list[FinalLemmaEntry], output_dir: str | Path,
         embedding_cache_hits = sum(item.embedding_cache_hits for item in audits)
         embedding_pairs_scored = sum(item.embedding_pairs_scored for item in audits)
         embedding_candidates_selected = sum(item.embedding_candidates_selected for item in audits)
+        embedding_exact_duplicates_removed = sum(
+            item.embedding_exact_duplicates_removed for item in audits
+        )
+        embedding_mmr_lemmas = sum(item.embedding_mmr_enabled for item in audits)
+        embedding_mmr_lambdas = sorted({
+            item.embedding_mmr_lambda for item in audits
+            if item.embedding_mmr_lambda is not None
+        })
         embedding_models = sorted({item.embedding_model for item in audits if item.embedding_model})
         rejected_count = sum(rejected_by_reason.values())
         accepted_before_cap = sum(item.accepted_before_final_cap for item in audits)
@@ -103,6 +111,9 @@ def calculate_statistics(entries: list[FinalLemmaEntry], output_dir: str | Path,
         embedding_cache_hits = 0
         embedding_pairs_scored = 0
         embedding_candidates_selected = 0
+        embedding_exact_duplicates_removed = 0
+        embedding_mmr_lemmas = 0
+        embedding_mmr_lambdas = []
         embedding_models = []
 
     input_metadata_path = Path(output_dir) / "run_input_statistics.json"
@@ -152,6 +163,9 @@ def calculate_statistics(entries: list[FinalLemmaEntry], output_dir: str | Path,
         "embedding_cache_hits": embedding_cache_hits,
         "embedding_pairs_scored": embedding_pairs_scored,
         "embedding_candidates_selected": embedding_candidates_selected,
+        "embedding_exact_duplicates_removed": embedding_exact_duplicates_removed,
+        "embedding_mmr_lemmas": embedding_mmr_lemmas,
+        "embedding_mmr_lambdas": embedding_mmr_lambdas,
         "accepted_examples": accepted,
         "accepted_examples_before_final_cap": accepted_before_cap,
         "examples_excluded_by_final_cap": max(accepted_before_cap - accepted, 0),

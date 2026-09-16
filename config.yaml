@@ -25,6 +25,9 @@ validation:
   max_concurrency: 16
   max_final_examples_per_sense: 5
   max_candidates_per_gloss: 20
+  mmr_enabled: true
+  mmr_lambda: 0.7
+  exact_deduplication: true
 embeddings:
   enabled: true
   model: text-embedding-3-small

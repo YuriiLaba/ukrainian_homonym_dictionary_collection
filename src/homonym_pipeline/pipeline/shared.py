@@ -115,6 +115,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
         embedding_cache_hits = 0
         lemma_embedding_pairs_scored = 0
         lemma_embedding_candidates_selected = 0
+        lemma_embedding_exact_duplicates_removed = 0
+        embedding_mmr_enabled = False
+        embedding_mmr_lambda: float | None = None
         embedding_model = config.embeddings.model if config.embeddings.enabled else None
         validated_items = []
         grac_elapsed_seconds = 0.0
@@ -162,6 +165,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 "enabled": config.embeddings.enabled,
                 "model": config.embeddings.model,
                 "top_k": config.validation.max_candidates_per_gloss,
+                "mmr_enabled": config.validation.mmr_enabled,
+                "mmr_lambda": config.validation.mmr_lambda,
+                "exact_deduplication": config.validation.exact_deduplication,
             })
             ranking_record = embedding_cache.get(ranking_key) if resume else None
             if ranking_record:
@@ -173,6 +179,11 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 embedding_model = ranking_record.get("embedding_model") or embedding_model
                 lemma_embedding_pairs_scored = int(ranking_record.get("pairs_scored", 0))
                 lemma_embedding_candidates_selected = int(ranking_record.get("candidates_selected", 0))
+                lemma_embedding_exact_duplicates_removed = int(
+                    ranking_record.get("exact_duplicates_removed", 0)
+                )
+                embedding_mmr_enabled = bool(ranking_record.get("mmr_enabled", False))
+                embedding_mmr_lambda = ranking_record.get("mmr_lambda")
             else:
                 ranking = rank_candidates_by_gloss(
                     entry.glosses,
@@ -183,12 +194,18 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                     status=("disabled" if not config.embeddings.enabled else
                             "dry_run" if getattr(embedder, "dry_run", False) else
                             "no_embedder" if embedder is None else "embedded"),
+                    mmr_enabled=config.validation.mmr_enabled,
+                    mmr_lambda=config.validation.mmr_lambda,
+                    exact_deduplication=config.validation.exact_deduplication,
                 )
                 ranked_by_sense = ranking.by_sense
                 embedding_model = ranking.model or embedding_model
                 embedding_calls = len(ranking.embedding_calls)
                 lemma_embedding_pairs_scored = ranking.pairs_scored
                 lemma_embedding_candidates_selected = ranking.candidates_selected
+                lemma_embedding_exact_duplicates_removed = ranking.exact_duplicates_removed
+                embedding_mmr_enabled = ranking.mmr_enabled
+                embedding_mmr_lambda = ranking.mmr_lambda
                 ranking_record = {
                     "cache_key": ranking_key,
                     "lemma": entry.lemma,
@@ -197,6 +214,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                     "pool_size": candidate_count,
                     "pairs_scored": ranking.pairs_scored,
                     "candidates_selected": ranking.candidates_selected,
+                    "exact_duplicates_removed": ranking.exact_duplicates_removed,
+                    "mmr_enabled": ranking.mmr_enabled,
+                    "mmr_lambda": ranking.mmr_lambda,
                     "ranked_by_sense": {
                         sense_id: [item.model_dump(mode="json") for item in items]
                         for sense_id, items in ranked_by_sense.items()
@@ -360,6 +380,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 embedding_cache_hits=embedding_cache_hits,
                 embedding_pairs_scored=lemma_embedding_pairs_scored,
                 embedding_candidates_selected=lemma_embedding_candidates_selected,
+                embedding_exact_duplicates_removed=lemma_embedding_exact_duplicates_removed,
+                embedding_mmr_enabled=embedding_mmr_enabled,
+                embedding_mmr_lambda=embedding_mmr_lambda,
                 validation_batches=validation_batches,
                 validation_cache_hits=validation_cache_hits,
                 llm_assignments=len(validated_items),
@@ -391,6 +414,7 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 "[%d/%d] %s\n"
                 "  GRAC candidates: %d\n"
                 "  Embedding shortlist: up to %d/gloss (%d selected; %d scored pairs)\n"
+                "  Embedding diversity: MMR=%s (lambda=%s); exact duplicates removed: %d\n"
                 "  Supported senses: %d/%d\n"
                 "  Lemmas with 2+ supported senses: %d/%d\n"
                 "  Processed glosses: %d/%d\n"
@@ -406,6 +430,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 config.validation.max_candidates_per_gloss,
                 lemma_embedding_candidates_selected,
                 lemma_embedding_pairs_scored,
+                "on" if embedding_mmr_enabled else "off",
+                f"{embedding_mmr_lambda:.2f}" if embedding_mmr_lambda is not None else "n/a",
+                lemma_embedding_exact_duplicates_removed,
                 lemma_glosses_with_examples,
                 len(final_entry.glosses),
                 lemmas_with_multiple_glosses_with_examples,
@@ -457,6 +484,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 embedding_cache_hits=embedding_cache_hits,
                 embedding_pairs_scored=lemma_embedding_pairs_scored,
                 embedding_candidates_selected=lemma_embedding_candidates_selected,
+                embedding_exact_duplicates_removed=lemma_embedding_exact_duplicates_removed,
+                embedding_mmr_enabled=embedding_mmr_enabled,
+                embedding_mmr_lambda=embedding_mmr_lambda,
                 validation_batches=validation_batches,
                 validation_cache_hits=validation_cache_hits,
                 llm_assignments=len(validated_items),

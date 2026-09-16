@@ -39,8 +39,11 @@ class ValidationConfig(BaseModel):
     batch_size: int = Field(default=20, gt=0)
     max_concurrency: int = Field(default=8, ge=1)
     max_final_examples_per_sense: int = Field(default=5, ge=0)
-    # Luna sees the highest-scoring candidates separately for each gloss.
+    # Luna sees the most relevant and diverse candidates separately for each gloss.
     max_candidates_per_gloss: int = Field(default=50, ge=0)
+    mmr_enabled: bool = True
+    mmr_lambda: float = Field(default=0.7, ge=0.0, le=1.0)
+    exact_deduplication: bool = True
 
 
 class EmbeddingConfig(BaseModel):

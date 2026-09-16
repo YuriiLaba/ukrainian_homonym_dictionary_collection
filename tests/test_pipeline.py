@@ -89,6 +89,58 @@ def test_cosine_reranking_selects_top_candidates_per_gloss():
     assert ranked.pairs_scored == 2
 
 
+def test_mmr_prefers_diversity_after_relevance():
+    class FakeEmbedder:
+        config = AppConfig().embeddings
+        config.model = "fake-embedder"
+        dry_run = False
+
+        def embed_texts(self, texts):
+            vectors = {
+                "зброя": [1.0, 0.0],
+                "Перший приклад.": [1.0, 0.0],
+                "Майже такий самий приклад.": [1.0, 0.0],
+                "Різноманітний приклад.": [0.0, 1.0],
+            }
+            return EmbeddingBatch([vectors[text] for text in texts], [])
+
+    gloss = Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary")
+    candidates = FixtureGracClient({"автомат": [
+        {"example_id": "e1", "sentence": "Перший приклад."},
+        {"example_id": "e2", "sentence": "Майже такий самий приклад."},
+        {"example_id": "e3", "sentence": "Різноманітний приклад."},
+    ]}).retrieve_examples("автомат", 10)
+    ranked = rank_candidates_by_gloss(
+        [gloss], candidates, FakeEmbedder(), top_k=2,
+        mmr_enabled=True, mmr_lambda=0.4,
+    )
+    selected = ranked.by_sense["s1"]
+    assert [item.example_id for item in selected] == ["e1", "e3"]
+    assert selected[1].source_metadata["embedding_mmr_rank"] == 2
+    assert ranked.mmr_enabled is True
+
+
+def test_embedding_reranking_deduplicates_normalized_sentence_text():
+    class FakeEmbedder:
+        config = AppConfig().embeddings
+        config.model = "fake-embedder"
+        dry_run = False
+
+        def embed_texts(self, texts):
+            vectors = {"зброя": [1.0, 0.0], "Однаковий приклад.": [1.0, 0.0], "Інший приклад.": [0.0, 1.0]}
+            return EmbeddingBatch([vectors[text] for text in texts], [])
+
+    gloss = Gloss(sense_id="s1", lemma="автомат", gloss="зброя", source="dictionary")
+    candidates = FixtureGracClient({"автомат": [
+        {"example_id": "e1", "sentence": "Однаковий приклад."},
+        {"example_id": "e2", "sentence": "  Однаковий   приклад.  "},
+        {"example_id": "e3", "sentence": "Інший приклад."},
+    ]}).retrieve_examples("автомат", 10)
+    ranked = rank_candidates_by_gloss([gloss], candidates, FakeEmbedder(), top_k=3)
+    assert [item.example_id for item in ranked.by_sense["s1"]] == ["e1", "e3"]
+    assert ranked.exact_duplicates_removed == 1
+
+
 def test_shared_pipeline_sends_only_embedding_shortlist_to_luna(tmp_path: Path):
     class FakeEmbedder:
         config = AppConfig().embeddings

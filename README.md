@@ -81,9 +81,12 @@ are insufficient eligible sentences.
 The shared stage retrieves up to 1,000 GRAC sentences per lemma by default. It then
 embeds the complete candidate pool and every gloss with the configured OpenAI embedding
 model (`text-embedding-3-small` by default), calculates cosine similarity locally, and
-passes the top 50 candidates independently for each gloss to Luna. The same sentence can
-therefore be shortlisted for different glosses, but final assignment still keeps one
-sense per sentence. The exact shortlist and scores are stored in
+uses exact text deduplication plus maximal marginal relevance (MMR) to pass a relevant
+and diverse shortlist independently for each gloss to Luna. The default shortlist is
+20 candidates per gloss and the default MMR lambda is 0.7. Set `validation.mmr_enabled`
+to false to restore relevance-only selection. The same sentence can therefore be
+shortlisted for different glosses, but final assignment still keeps one sense per
+sentence. The exact shortlist, cosine scores, MMR scores, and duplicate metadata are stored in
 `grac/embedding_rankings.jsonl`; embedding request metadata is stored in
 `grac/embedding_calls.jsonl`. Set `embeddings.enabled: false` or use `--no-embeddings`
 to use deterministic GRAC order instead of semantic reranking.
