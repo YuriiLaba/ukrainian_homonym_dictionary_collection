@@ -1,0 +1,320 @@
+"""ГРАК Bonito adapter, verified against the live Grac v.19 website backend."""
+from __future__ import annotations
+
+import html
+import json
+import random
+import re
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from collections.abc import Iterator
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+import httpx
+
+from homonym_pipeline.hashing import content_hash, example_id
+from homonym_pipeline.models import CandidateExample
+from homonym_pipeline.storage import atomic_write_json
+
+DEFAULT_ENDPOINT = "https://sketch.uacorpus.org/bonito/run.cgi/"
+ADAPTER_VERSION = "grac_bonito_sentences_v1"
+
+
+class GracError(RuntimeError):
+    """Access/backend/response-contract error, never interpreted as zero hits."""
+
+
+def sentence_query(lemma: str) -> str:
+    if not lemma or lemma != lemma.strip() or any(ord(c) < 32 for c in lemma):
+        raise ValueError("lemma must be nonempty, trimmed and contain no control characters")
+    # CQL quoted attributes are regexes: escape syntax, preserving literal lemma text.
+    escaped = re.escape(lemma).replace('"', r'\"')
+    return f'<s/> containing [lemma="{escaped}"]'
+
+
+def _sentence_ranks(total: int, seed: int | None) -> Iterator[int]:
+    if seed is None:
+        yield from range(total)
+        return
+    # Lazy Fisher-Yates: uniform sampling without allocating the entire concordance.
+    rng = random.Random(seed)
+    swaps: dict[int, int] = {}
+    for start in range(total):
+        chosen = rng.randrange(start, total)
+        value = swaps.get(chosen, chosen)
+        swaps[chosen] = swaps.get(start, start)
+        swaps.pop(start, None)
+        yield value
+
+
+class GracClient:
+    def __init__(
+        self, endpoint: str = DEFAULT_ENDPOINT, corpus: str = "grac19",
+        timeout: float = 30.0, user_agent: str = "ukrainian-homonym-pipeline/0.1",
+        client: httpx.Client | None = None, *, cache_dir: str | Path | None = None,
+        resume: bool = True, page_size: int = 100, max_retries: int = 3,
+        poll_attempts: int = 15, request_interval: float = 0.5,
+        max_sentence_tokens: int = 100, seed: int | None = None,
+    ):
+        parts = urlsplit(endpoint)
+        if parts.scheme not in {"http", "https"} or not parts.netloc or parts.query or parts.fragment:
+            raise ValueError("endpoint must be an HTTP(S) base URL without query or fragment")
+        # Accept the original config's site root and display name.
+        path = parts.path if parts.path.strip("/") else "/bonito/run.cgi/"
+        self.endpoint = urlunsplit((parts.scheme, parts.netloc, path.rstrip("/") + "/", "", ""))
+        self.corpus = "grac19" if corpus == "Grac v.19" else corpus
+        if not self.corpus or page_size < 1 or max_retries < 0 or poll_attempts < 1:
+            raise ValueError("invalid corpus, page_size, max_retries or poll_attempts")
+        if request_interval < 0 or not 1 <= max_sentence_tokens <= 100:
+            raise ValueError("request_interval must be >= 0; max_sentence_tokens must be 1..100")
+        self.client = client or httpx.Client(timeout=timeout, headers={"User-Agent": user_agent})
+        self._owns_client = client is None
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
+        self.resume, self.page_size = resume, page_size
+        self.max_retries, self.poll_attempts = max_retries, poll_attempts
+        self.request_interval = request_interval
+        self.max_sentence_tokens, self.seed = max_sentence_tokens, seed
+        self._last_request = 0.0
+
+    @classmethod
+    def from_config(cls, config: Any, *, cache_dir: Path, resume: bool = True) -> GracClient:
+        return cls(config.endpoint, config.corpus, config.timeout_seconds, config.user_agent,
+                   cache_dir=cache_dir, resume=resume, page_size=config.page_size,
+                   max_retries=config.max_retries, poll_attempts=config.poll_attempts,
+                   request_interval=config.request_interval_seconds,
+                   max_sentence_tokens=config.max_sentence_tokens, seed=config.seed)
+
+    @property
+    def cache_identity(self) -> dict[str, Any]:
+        return {"adapter": ADAPTER_VERSION, "endpoint": self.endpoint, "corpus": self.corpus,
+                "page_size": self.page_size, "max_sentence_tokens": self.max_sentence_tokens,
+                "seed": self.seed}
+
+    def close(self) -> None:
+        if self._owns_client:
+            self.client.close()
+
+    def __enter__(self) -> GracClient:
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
+    def _request(self, action: str, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        params = {"corpname": self.corpus, "format": "json", **params}
+        url = self.endpoint + action
+        key = content_hash({"url": url, "params": params, "adapter": ADAPTER_VERSION})
+        index = self.cache_dir / "requests" / f"{key}.json" if self.cache_dir else None
+        if self.resume and index and index.exists():
+            record = json.loads(index.read_text(encoding="utf-8"))
+            return json.loads(record["response_text"]), record
+        for attempt in range(self.max_retries + 1):
+            delay = self.request_interval - (time.monotonic() - self._last_request)
+            if delay > 0:
+                time.sleep(delay)
+            self._last_request = time.monotonic()
+            try:
+                response = self.client.get(url, params=params)
+            except httpx.TransportError as error:
+                if attempt == self.max_retries:
+                    raise GracError(f"ГРАК transport failed: {error}") from error
+                time.sleep(min(2 ** attempt, 30))
+                continue
+            record = {"url": str(response.url), "params": params,
+                      "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                      "status_code": response.status_code, "response_text": response.text}
+            if self.cache_dir:
+                raw_path = self.cache_dir / "raw" / f"{content_hash(record)}.json"
+                record["raw_response_path"] = str(raw_path)
+                atomic_write_json(raw_path, record)
+            if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < self.max_retries:
+                retry_after = response.headers.get("Retry-After", "")
+                delay = float(retry_after) if retry_after.isdigit() else 2 ** attempt
+                time.sleep(min(delay, 60))
+                continue
+            if not response.is_success:
+                raise GracError(f"ГРАК {action} returned HTTP {response.status_code}; see raw cache")
+            try:
+                payload = response.json()
+            except ValueError as error:
+                raise GracError(f"ГРАК {action} returned non-JSON content; interface may have changed") from error
+            if not isinstance(payload, dict) or payload.get("error"):
+                raise GracError(f"ГРАК {action} error: {payload}")
+            # Incomplete asynchronous responses are polled, never reused as complete.
+            if index and payload.get("finished", 1) not in (0, "0", False):
+                atomic_write_json(index, record)
+            return payload, record
+        raise AssertionError("unreachable")
+
+    def _page(self, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        for poll in range(self.poll_attempts):
+            payload, record = self._request("concordance", params)
+            if payload.get("finished") in (0, "0", False):
+                time.sleep(min(1 + poll, 5))
+                continue
+            if (not isinstance(payload.get("Lines"), list)
+                    or type(payload.get("concsize")) is not int
+                    or payload["concsize"] < 0
+                    or payload.get("finished") not in (1, "1", True)):
+                raise GracError("Unexpected ГРАК concordance schema (Lines/concsize/finished)")
+            if int(payload.get("concordance_size_limit", 0)):
+                raise GracError("ГРАК capped this concordance; refusing to label it a complete result")
+            return payload, record
+        raise GracError("ГРАК concordance did not finish within the configured polling limit")
+
+    def retrieve_examples(self, lemma: str, max_examples: int, seed: int | None = None) -> list[CandidateExample]:
+        cql = sentence_query(lemma)
+        if max_examples < 0:
+            raise ValueError("max_examples must be >= 0")
+        if max_examples == 0:
+            return []
+        seed = self.seed if seed is None else seed
+        result_key = content_hash({**self.cache_identity, "lemma": lemma,
+                                   "max_examples": max_examples, "seed": seed})
+        result_path = self.cache_dir / "examples" / f"{result_key}.json" if self.cache_dir else None
+        if self.resume and result_path and result_path.exists():
+            saved = json.loads(result_path.read_text(encoding="utf-8"))
+            return [CandidateExample.model_validate(item) for item in saved["examples"]]
+
+        info, info_record = self._request("corp_info", {})
+        if not isinstance(info.get("structures"), list) or not isinstance(info.get("attributes"), list):
+            raise GracError("Unexpected ГРАК corpus-info schema")
+        if "lemma" not in {item["name"] for item in info["attributes"]}:
+            raise GracError(f"Corpus {self.corpus} has no lemma annotation")
+        if "s" not in {item["name"] for item in info["structures"]}:
+            raise GracError(f"Corpus {self.corpus} has no sentence boundaries")
+        refs = ["#", "doc"]
+        for struct in info["structures"]:
+            if struct["name"] == "doc":
+                refs.extend("=doc." + attr["name"] for attr in struct["attributes"])
+        page_size = min(self.page_size, max_examples)
+        params = {"json": json.dumps({"concordance_query": [
+            {"queryselector": "cqlrow", "cql": cql}]}, ensure_ascii=False),
+            "viewmode": "sen", "attrs": "word", "structs": "g,s", "refs": ",".join(refs),
+            "pagesize": page_size, "fromp": 1}
+        first, first_record = self._page(params)
+        total = first["concsize"]
+        # Reproducible local sampling; do not invent a server-side seed parameter.
+        ranks = _sentence_ranks(total, seed)
+        pages = {1: (first, first_record)}
+        output: list[CandidateExample] = []
+        seen: set[str] = set()
+        skipped: list[dict[str, Any]] = []
+        for rank in ranks:
+            page, offset = divmod(rank, page_size)
+            page += 1
+            if page not in pages:
+                pages[page] = self._page({**params, "fromp": page})
+            payload, record = pages[page]
+            if payload["concsize"] != total or offset >= len(payload["Lines"]):
+                raise GracError("ГРАК result count/page changed during pagination; retry with fresh cache")
+            row = payload["Lines"][offset]
+            if not isinstance(row, dict) or type(row.get("hitlen")) is not int or row["hitlen"] < 1:
+                raise GracError("ГРАК line is missing its sentence token length")
+            # Bonito displays only 100 initial tokens of long structures.
+            if row["hitlen"] > self.max_sentence_tokens:
+                skipped.append({"toknum": row.get("toknum"), "reason": "sentence_too_long",
+                                "hitlen": row["hitlen"]})
+                continue
+            example = self._parse_line(lemma, cql, row, refs, info, payload, record)
+            if example.example_id in seen:
+                continue
+            seen.add(example.example_id)
+            example.source_metadata.update({
+                "selection_strategy": "corpus_order" if seed is None else "seeded_sentence_ranks",
+                "seed": seed, "result_rank": rank,
+                "corpus_info_raw_path": info_record.get("raw_response_path"),
+            })
+            output.append(example)
+            if len(output) == max_examples:
+                break
+        if result_path:
+            atomic_write_json(result_path, {"cache_key": result_key, "lemma": lemma,
+                              "total_sentence_hits": total, "skipped": skipped,
+                              "examples": [item.model_dump(mode="json") for item in output]})
+        return output
+
+    def _parse_line(self, lemma: str, cql: str, row: dict[str, Any], refs: list[str],
+                    info: dict[str, Any], payload: dict[str, Any], record: dict[str, Any]) -> CandidateExample:
+        if type(row.get("toknum")) is not int or not isinstance(row.get("Kwic"), list):
+            raise GracError("ГРАК line is missing toknum/Kwic")
+        chunks = []
+        for chunk in row["Kwic"]:
+            if not isinstance(chunk, dict) or "strc" in chunk:
+                raise GracError("Unexpected ГРАК KWIC chunk/markup")
+            if not isinstance(chunk.get("str"), str) or chunk.get("attr"):
+                raise GracError("Unexpected ГРАК KWIC word/attribute schema")
+            chunks.append(html.unescape(chunk["str"]))
+        if not chunks or not any(chunks):
+            raise GracError("Empty sentence KWIC")
+        # structs=g makes Bonito apply glue within KWIC (punctuation/quotes/hyphens).
+        # Join remaining chunks as the site's UI does; no Ukrainian text normalization.
+        sentence = " ".join(chunks)
+        values = row.get("Refs")
+        if not isinstance(values, list) or len(values) != len(refs):
+            raise GracError("ГРАК reference fields do not match the requested metadata")
+        references = {key.lstrip("="): html.unescape(value) for key, value in zip(refs, values)
+                      if isinstance(value, str) and value not in ("", "===NONE===")}
+        metadata: dict[str, Any] = {
+            "corpus": self.corpus, "corpus_name": info.get("name"), "corpus_info": info.get("info"),
+            "sentence_start_token": row["toknum"], "sentence_token_count": row["hitlen"],
+            "references": references, "total_sentence_hits": payload["concsize"],
+            "query": cql, "endpoint": self.endpoint + "concordance",
+            "request_url": record["url"], "request_params": record["params"],
+            "retrieved_at": record["retrieved_at"], "raw_response_path": record.get("raw_response_path"),
+            "api_version": payload.get("api_version"), "manatee_version": payload.get("manatee_version"),
+            "adapter_version": ADAPTER_VERSION, "raw_line": row,
+            "text_reconstruction": "Bonito g-glued KWIC chunks, HTML-decoded, joined with spaces",
+        }
+        for source, target in {"doc": "document_id", "doc.author": "author", "doc.title": "title",
+                               "doc.date": "year", "doc.genre": "genre", "doc.uri": "url",
+                               "doc.publication": "publication", "doc.publisher": "publisher"}.items():
+            if source in references:
+                metadata[target] = references[source]
+        return CandidateExample(
+            example_id=example_id(lemma, sentence, f"{self.endpoint}|{self.corpus}|{row['toknum']}|{row['hitlen']}"),
+            lemma=lemma, sentence=sentence, query=cql, source_metadata=metadata,
+            retrieved_at=datetime.fromisoformat(record["retrieved_at"]),
+        )
+
+
+# Preserve the earlier import name, using the now-verified response contract.
+HttpJsonGracClient = GracClient
+
+
+class FixtureGracClient(GracClient):
+    def __init__(self, examples_by_lemma: dict[str, list[dict[str, Any]]]):
+        self.examples_by_lemma = examples_by_lemma
+
+    @property
+    def cache_identity(self) -> dict[str, Any]:
+        return {"adapter": "grac_fixture_v1", "data_hash": content_hash(self.examples_by_lemma)}
+
+    def close(self) -> None:
+        pass
+
+    def retrieve_examples(self, lemma: str, max_examples: int, seed: int | None = None) -> list[CandidateExample]:
+        output: list[CandidateExample] = []
+        for row in self.examples_by_lemma.get(lemma, [])[:max_examples]:
+            sentence = row["sentence"]
+            data = {**row, "example_id": row.get("example_id") or example_id(lemma, sentence),
+                    "lemma": lemma, "sentence": sentence,
+                    "source_metadata": row.get("source_metadata", row.get("metadata", {})),
+                    "query": row.get("query") or f'fixture:[lemma="{lemma}"]'}
+            output.append(CandidateExample.model_validate(data))
+        return output
+
+
+class JsonFileGracClient(FixtureGracClient):
+    """Offline JSON: examples_by_lemma mapping, or the retrieval CLI's example list."""
+
+    def __init__(self, path: str | Path):
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for row in payload:
+                grouped.setdefault(row["lemma"], []).append(row)
+            payload = grouped
+        super().__init__(payload.get("examples_by_lemma", payload))

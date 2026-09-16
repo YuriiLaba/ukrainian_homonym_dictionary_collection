@@ -1,0 +1,27 @@
+llm:
+  model_gloss: gpt-5.6-terra
+  model_validation: gpt-5.6-luna
+  temperature: 0
+  reasoning_effort: medium
+  max_retries: 3
+  api_key_env: OPENAI_API_KEY
+grac:
+  endpoint: https://sketch.uacorpus.org/bonito/run.cgi/
+  corpus: grac19
+  max_examples_per_lemma: 100
+  timeout_seconds: 30
+  user_agent: "ukrainian-homonym-pipeline/0.1 (research)"
+  page_size: 100
+  max_retries: 3
+  poll_attempts: 15
+  request_interval_seconds: 0.5
+  max_sentence_tokens: 100
+  seed: null  # corpus order; set an integer for reproducible random sentence ranks
+validation:
+  min_confidence: 0.8
+  batch_size: 20
+  max_final_examples_per_sense: 5
+pipeline:
+  resume: true
+  wikipedia_search_fallback: true
+  allow_llm_added_senses: true
