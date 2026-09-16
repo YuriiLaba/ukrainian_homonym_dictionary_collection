@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import Counter, defaultdict
@@ -21,7 +22,7 @@ from homonym_pipeline.models import (
 )
 from homonym_pipeline.retrieval.grac import GracClient
 from homonym_pipeline.retrieval.reranking import rank_candidates_by_gloss
-from homonym_pipeline.storage import append_jsonl, latest_by_cache_key
+from homonym_pipeline.storage import append_jsonl, atomic_write_json, latest_by_cache_key
 from homonym_pipeline.validation.example_validator import validate_gloss_batch
 
 
@@ -66,6 +67,21 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             len(entries),
         )
         entries = [entry for entry in entries if len(entry.glosses) >= 2]
+    input_metadata_path = root / "run_input_statistics.json"
+    if input_metadata_path.exists():
+        input_metadata = json.loads(input_metadata_path.read_text(encoding="utf-8"))
+    else:
+        input_metadata = {
+            "run_id": run_id,
+            "original_lemmas": len(entries) + dropped_single_gloss_lemmas,
+        }
+    input_metadata["run_id"] = run_id
+    input_metadata["single_gloss_lemmas_removed"] = (
+        int(input_metadata.get("single_gloss_lemmas_removed", 0)) + dropped_single_gloss_lemmas
+    )
+    input_metadata["lemmas_after_gloss_filter"] = len(entries)
+    input_metadata["processed_lemmas"] = len(entries)
+    atomic_write_json(input_metadata_path, input_metadata)
     finals: list[FinalLemmaEntry] = []
     total_lemmas = len(entries)
     processed_lemmas = 0
@@ -84,7 +100,8 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     )
     logger.info(
         "[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started."
-        " Embedding concurrency: %d; Luna concurrency: %d.",
+        " GRAC page concurrency: %d; embedding concurrency: %d; Luna concurrency: %d.",
+        config.grac.max_page_concurrency,
         config.embeddings.max_concurrency,
         config.validation.max_concurrency,
     )
@@ -100,21 +117,43 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
         lemma_embedding_candidates_selected = 0
         embedding_model = config.embeddings.model if config.embeddings.enabled else None
         validated_items = []
+        grac_elapsed_seconds = 0.0
+        embedding_elapsed_seconds = 0.0
+        validation_elapsed_seconds = 0.0
+        finalization_elapsed_seconds = 0.0
+        grac_retrieval_stats: dict[str, Any] = {}
+        grac_cache_hit = False
+        validation_model_accepted = 0
+        validation_model_rejected = 0
+        validation_confidence_sum = 0.0
+        validation_confidence_count = 0
+        active_stage: str | None = None
+        stage_started = lemma_started
         try:
+            active_stage = "grac"
+            stage_started = time.perf_counter()
             retrieval_key = content_hash({"stage": "grac", "lemma": entry.lemma,
                                           "max": config.grac.max_examples_per_lemma,
                                           "adapter": grac.cache_identity})
             candidate_record = candidate_cache.get(retrieval_key) if resume else None
             if candidate_record:
+                grac_cache_hit = True
                 candidate_models = [CandidateExample.model_validate(item) for item in candidate_record["examples"]]
+                grac_retrieval_stats = dict(candidate_record.get("retrieval_stats", {}))
             else:
                 candidate_models = grac.retrieve_examples(entry.lemma, config.grac.max_examples_per_lemma)
+                grac_retrieval_stats = dict(getattr(grac, "last_retrieval_stats", {}))
                 record = {"cache_key": retrieval_key, "lemma": entry.lemma,
+                          "retrieval_stats": grac_retrieval_stats,
                           "examples": [item.model_dump(mode="json") for item in candidate_models]}
                 append_jsonl(candidate_path, record)
                 candidate_cache[retrieval_key] = record
             candidate_count = len(candidate_models)
+            grac_elapsed_seconds = time.perf_counter() - stage_started
+            active_stage = None
 
+            active_stage = "embedding"
+            stage_started = time.perf_counter()
             ranking_key = content_hash({
                 "stage": "embedding_reranking",
                 "lemma": entry.lemma,
@@ -166,11 +205,22 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 append_jsonl(embedding_ranking_path, ranking_record)
                 embedding_cache[ranking_key] = ranking_record
                 for call in ranking.embedding_calls:
-                    append_jsonl(embedding_calls_path, {"cache_key": ranking_key, **call})
+                    embedding_call = dict(call)
+                    embedding_call.update({
+                        "run_id": run_id,
+                        "workflow": workflow,
+                        "stage": "embedding_reranking",
+                        "lemma": entry.lemma,
+                    })
+                    append_jsonl(embedding_calls_path, {"cache_key": ranking_key, **embedding_call})
+            embedding_elapsed_seconds = time.perf_counter() - stage_started
+            active_stage = None
 
             # Build all cache keys first, then execute only cache misses in a
             # bounded pool. Results are written below in job order, keeping the
             # JSONL artifacts deterministic even though requests finish out of order.
+            active_stage = "validation"
+            stage_started = time.perf_counter()
             validation_results = []
             pending_jobs = []
             job_order = 0
@@ -218,12 +268,28 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                               "validated": [item.model_dump(mode="json") for item in validated]}
                     append_jsonl(assignment_path, record)
                     cache[validation_key] = record
-                    append_jsonl(calls_path, {"cache_key": validation_key, **call_record.model_dump(mode="json")})
+                    call_payload = call_record.model_dump(mode="json")
+                    call_payload.update({
+                        "run_id": run_id,
+                        "workflow": workflow,
+                        "stage": "example_validation",
+                        "lemma": entry.lemma,
+                        "sense_id": gloss.sense_id,
+                    })
+                    append_jsonl(calls_path, {"cache_key": validation_key, **call_payload})
                 for item in validated:
                     validated_items.append(item)
                     if not item.accepted and not from_cache:
                         append_jsonl(rejected_path, item)
+            validation_elapsed_seconds = time.perf_counter() - stage_started
+            active_stage = None
+            validation_model_accepted = sum(item.accepted for item in validated_items)
+            validation_model_rejected = sum(not item.accepted for item in validated_items)
+            validation_confidence_sum = sum(item.model_confidence for item in validated_items)
+            validation_confidence_count = len(validated_items)
 
+            active_stage = "finalization"
+            stage_started = time.perf_counter()
             accepted_by_example: dict[str, list[tuple[int, ValidatedExample]]] = defaultdict(list)
             for order, item in enumerate(validated_items):
                 if item.accepted and item.model_confidence >= config.validation.min_confidence:
@@ -259,12 +325,32 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             if conflict_count:
                 rejected_by_reason["duplicate_assignment_conflict"] += conflict_count
             metadata = stage_metadata.get(entry.lemma, {})
+            finalization_elapsed_seconds = time.perf_counter() - stage_started
+            active_stage = None
             audit = LemmaAuditRecord(
                 run_id=run_id,
                 workflow=workflow,
                 lemma=entry.lemma,
                 status="success",
                 elapsed_seconds=round(time.perf_counter() - lemma_started, 6),
+                grac_elapsed_seconds=round(grac_elapsed_seconds, 6),
+                embedding_elapsed_seconds=round(embedding_elapsed_seconds, 6),
+                validation_elapsed_seconds=round(validation_elapsed_seconds, 6),
+                finalization_elapsed_seconds=round(finalization_elapsed_seconds, 6),
+                wikipedia_elapsed_seconds=float(metadata.get("wikipedia_elapsed_seconds", 0.0)),
+                gloss_augmentation_elapsed_seconds=float(
+                    metadata.get("gloss_augmentation_elapsed_seconds", 0.0)
+                ),
+                wikipedia_cache_hit=bool(metadata.get("wikipedia_cache_hit", False)),
+                terra_cache_hit=bool(metadata.get("terra_cache_hit", False)),
+                grac_total_sentence_hits=int(grac_retrieval_stats.get("total_sentence_hits", 0)),
+                grac_pages_requested=int(grac_retrieval_stats.get("pages_requested", 0)),
+                grac_raw_rows_examined=int(grac_retrieval_stats.get("raw_rows_examined", 0)),
+                grac_skipped_by_reason=dict(grac_retrieval_stats.get("skipped_by_reason", {})),
+                grac_duplicate_rows_skipped=int(grac_retrieval_stats.get("duplicate_rows_skipped", 0)),
+                grac_request_attempts=int(grac_retrieval_stats.get("request_attempts", 0)),
+                grac_retry_count=int(grac_retrieval_stats.get("retry_count", 0)),
+                grac_cache_hit=grac_cache_hit,
                 input_glosses=len(entry.glosses),
                 wikipedia_candidates=int(metadata.get("wikipedia_candidates", 0)),
                 terra_actions=dict(metadata.get("terra_actions", {})),
@@ -277,6 +363,10 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 validation_batches=validation_batches,
                 validation_cache_hits=validation_cache_hits,
                 llm_assignments=len(validated_items),
+                validation_model_accepted=validation_model_accepted,
+                validation_model_rejected=validation_model_rejected,
+                validation_confidence_sum=validation_confidence_sum,
+                validation_confidence_count=validation_confidence_count,
                 accepted_before_final_cap=len(accepted_examples),
                 rejected_by_reason=dict(rejected_by_reason),
                 final_glosses=len(final_entry.glosses),
@@ -304,7 +394,11 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 "  Supported senses: %d/%d\n"
                 "  Lemmas with 2+ supported senses: %d/%d\n"
                 "  Processed glosses: %d/%d\n"
-                "  Processing time: %.2f seconds",
+                "  GRAC retrieval time: %.2f seconds\n"
+                "  Embedding time: %.2f seconds\n"
+                "  Luna validation time: %.2f seconds\n"
+                "  Finalization time: %.2f seconds\n"
+                "  Total processing time: %.2f seconds",
                 index,
                 total_lemmas,
                 entry.lemma,
@@ -318,9 +412,23 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 total_lemmas,
                 processed_glosses,
                 total_glosses,
+                grac_elapsed_seconds,
+                embedding_elapsed_seconds,
+                validation_elapsed_seconds,
+                finalization_elapsed_seconds,
                 lemma_elapsed,
             )
         except Exception as error:
+            if active_stage is not None:
+                elapsed = time.perf_counter() - stage_started
+                if active_stage == "grac":
+                    grac_elapsed_seconds = elapsed
+                elif active_stage == "embedding":
+                    embedding_elapsed_seconds = elapsed
+                elif active_stage == "validation":
+                    validation_elapsed_seconds = elapsed
+                elif active_stage == "finalization":
+                    finalization_elapsed_seconds = elapsed
             lemma_elapsed = time.perf_counter() - lemma_started
             append_jsonl(failures_path, FailureRecord(stage="shared", lemma=entry.lemma,
                                                       error_type=type(error).__name__, message=str(error)))
@@ -330,6 +438,18 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 lemma=entry.lemma,
                 status="failed",
                 elapsed_seconds=round(time.perf_counter() - lemma_started, 6),
+                grac_elapsed_seconds=round(grac_elapsed_seconds, 6),
+                embedding_elapsed_seconds=round(embedding_elapsed_seconds, 6),
+                validation_elapsed_seconds=round(validation_elapsed_seconds, 6),
+                finalization_elapsed_seconds=round(finalization_elapsed_seconds, 6),
+                grac_total_sentence_hits=int(grac_retrieval_stats.get("total_sentence_hits", 0)),
+                grac_pages_requested=int(grac_retrieval_stats.get("pages_requested", 0)),
+                grac_raw_rows_examined=int(grac_retrieval_stats.get("raw_rows_examined", 0)),
+                grac_skipped_by_reason=dict(grac_retrieval_stats.get("skipped_by_reason", {})),
+                grac_duplicate_rows_skipped=int(grac_retrieval_stats.get("duplicate_rows_skipped", 0)),
+                grac_request_attempts=int(grac_retrieval_stats.get("request_attempts", 0)),
+                grac_retry_count=int(grac_retrieval_stats.get("retry_count", 0)),
+                grac_cache_hit=grac_cache_hit,
                 input_glosses=len(entry.glosses),
                 grac_candidates_retrieved=candidate_count,
                 embedding_model=embedding_model,
@@ -340,6 +460,10 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 validation_batches=validation_batches,
                 validation_cache_hits=validation_cache_hits,
                 llm_assignments=len(validated_items),
+                validation_model_accepted=validation_model_accepted,
+                validation_model_rejected=validation_model_rejected,
+                validation_confidence_sum=validation_confidence_sum,
+                validation_confidence_count=validation_confidence_count,
                 error_type=type(error).__name__,
                 error_message=str(error),
             )

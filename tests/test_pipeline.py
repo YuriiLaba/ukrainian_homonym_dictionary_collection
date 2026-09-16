@@ -20,6 +20,7 @@ from homonym_pipeline.models import FinalLemmaEntry, FinalSenseEntry, SourceRefe
 from homonym_pipeline.glosses.llm_augmentation import _decisions_to_glosses
 from homonym_pipeline.output.huggingface import to_huggingface_rows, write_huggingface
 from homonym_pipeline.output.manifest import finish_manifest, start_manifest
+from homonym_pipeline.output.statistics import calculate_statistics
 from homonym_pipeline.pipeline.shared import run_shared
 from homonym_pipeline.retrieval.grac import FixtureGracClient
 from homonym_pipeline.retrieval.reranking import cosine_similarity, rank_candidates_by_gloss
@@ -303,8 +304,18 @@ def test_shared_pipeline_aggregates_and_resumes(tmp_path: Path, caplog):
     assert "  Supported senses: 1/2" in caplog.text
     assert "  Lemmas with 2+ supported senses: 0/1" in caplog.text
     assert "  Processed glosses: 2/2" in caplog.text
-    assert "  Processing time: " in caplog.text
+    assert "  GRAC retrieval time: " in caplog.text
+    assert "  Embedding time: " in caplog.text
+    assert "  Luna validation time: " in caplog.text
+    assert "  Finalization time: " in caplog.text
+    assert "  Total processing time: " in caplog.text
     assert "[stage 2/3] Complete.\n  Processed lemmas: 1/1\n  Supported glosses: 1/2" in caplog.text
+    audit = json.loads((tmp_path / "audit" / "lemma_audit.jsonl").read_text(encoding="utf-8"))
+    assert audit["grac_elapsed_seconds"] >= 0
+    assert audit["embedding_elapsed_seconds"] >= 0
+    assert audit["validation_elapsed_seconds"] >= 0
+    assert audit["finalization_elapsed_seconds"] >= 0
+    assert audit["elapsed_seconds"] >= audit["finalization_elapsed_seconds"]
 
     class FailingGrac(FixtureGracClient):
         def retrieve_examples(self, lemma, max_examples, seed=None):
@@ -681,12 +692,38 @@ def test_run_manifest_records_input_and_completion(tmp_path: Path):
     input_path = tmp_path / "input.txt"
     input_path.write_text("автомат\n", encoding="utf-8")
     output_dir = tmp_path / "run"
-    manifest = start_manifest("baseline", input_path, output_dir, AppConfig())
+    manifest = start_manifest("baseline", input_path, output_dir, AppConfig(),
+                              run_parameters={"max_lemmas": 1})
     assert manifest["status"] == "running"
     assert manifest["input_sha256"]
+    assert manifest["run_parameters"]["max_lemmas"] == 1
     assert (output_dir / "config.snapshot.yaml").exists()
 
     finish_manifest(output_dir, status="completed", statistics={"test": True})
     saved = json.loads((output_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert saved["status"] == "completed"
     assert saved["statistics"] == {"test": True}
+
+
+def test_statistics_scope_llm_usage_to_run_and_calculate_cost(tmp_path: Path):
+    calls_path = tmp_path / "validation" / "llm_calls.jsonl"
+    calls_path.parent.mkdir(parents=True)
+    calls_path.write_text(
+        "\n".join([
+            json.dumps({"run_id": "run-1", "stage": "example_validation", "model": "model-a",
+                        "usage": {"input_tokens": 10, "output_tokens": 5}}),
+            json.dumps({"run_id": "run-2", "stage": "example_validation", "model": "model-a",
+                        "usage": {"input_tokens": 100, "output_tokens": 50}}),
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    config = AppConfig()
+    config.llm.pricing = {"model-a": {
+        "input_per_million_tokens": 1.0,
+        "output_per_million_tokens": 2.0,
+    }}
+    stats = calculate_statistics([], tmp_path, run_id="run-1", config=config)
+    assert stats["llm_calls"] == 1
+    assert stats["llm_token_usage"] == {"input_tokens": 10, "output_tokens": 5}
+    assert stats["llm_calls_by_stage"] == {"example_validation": 1}
+    assert stats["estimated_llm_cost_usd"] == 0.00002

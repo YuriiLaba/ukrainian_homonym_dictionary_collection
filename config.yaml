@@ -9,10 +9,11 @@ llm:
 grac:
   endpoint: https://sketch.uacorpus.org/bonito/run.cgi/
   corpus: grac19
-  max_examples_per_lemma: 500
+  max_examples_per_lemma: 1000
   timeout_seconds: 30
   user_agent: "ukrainian-homonym-pipeline/0.1 (research)"
   page_size: 100
+  max_page_concurrency: 12
   max_retries: 3
   poll_attempts: 15
   request_interval_seconds: 0.5
@@ -21,7 +22,7 @@ grac:
 validation:
   min_confidence: 0.8
   batch_size: 20
-  max_concurrency: 12
+  max_concurrency: 16
   max_final_examples_per_sense: 5
   max_candidates_per_gloss: 20
 embeddings:

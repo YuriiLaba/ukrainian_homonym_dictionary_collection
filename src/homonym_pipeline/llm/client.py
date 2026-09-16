@@ -52,7 +52,10 @@ class LLMClient:
         if self.dry_run:
             raise RuntimeError("LLM call requested in dry-run mode")
         last_error: Exception | None = None
+        started = time.perf_counter()
+        attempts = 0
         for attempt in range(self.config.max_retries + 1):
+            attempts = attempt + 1
             try:
                 request = {
                     "model": model,
@@ -83,6 +86,8 @@ class LLMClient:
                     prompt_version=prompt_version,
                     temperature=self.config.temperature,
                     reasoning_effort=self.config.reasoning_effort,
+                    elapsed_seconds=round(time.perf_counter() - started, 6),
+                    attempts=attempts,
                     usage=usage,
                     raw_response=raw,
                 )

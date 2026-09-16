@@ -20,12 +20,14 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--corpus", help="Backend corpus ID, e.g. grac19")
     parser.add_argument("--page-size", type=int)
+    parser.add_argument("--page-concurrency", type=int)
     parser.add_argument("--seed", type=int, help="Sample reproducible random sentence ranks")
     parser.add_argument("--force", action="store_true", help="Refresh caches; retain raw responses")
     args = parser.parse_args()
     config = load_config(args.config)
     updates = {key: value for key, value in {
         "corpus": args.corpus, "page_size": args.page_size, "seed": args.seed,
+        "max_page_concurrency": args.page_concurrency,
     }.items() if value is not None}
     config.grac = type(config.grac).model_validate({**config.grac.model_dump(), **updates})
     if args.max_examples < 0:

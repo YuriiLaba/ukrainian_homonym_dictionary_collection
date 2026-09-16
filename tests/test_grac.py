@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -82,6 +84,12 @@ def test_pagination_metadata_raw_cache_and_offline_replay(tmp_path: Path):
     assert "genre" not in meta  # absent source metadata is not invented
     assert meta["total_sentence_hits"] == 3
     assert meta["raw_line"] == LINES[0]
+    assert grac.last_retrieval_stats["total_sentence_hits"] == 3
+    assert grac.last_retrieval_stats["pages_requested"] == 2
+    assert grac.last_retrieval_stats["raw_rows_examined"] == 3
+    assert grac.last_retrieval_stats["eligible_candidates"] == 3
+    assert grac.last_retrieval_stats["request_attempts"] == 3
+    assert grac.last_retrieval_stats["retry_count"] == 0
     raw = json.loads(Path(meta["raw_response_path"]).read_text())
     assert json.loads(raw["response_text"])["Lines"][0] == LINES[0]
 
@@ -105,6 +113,7 @@ def test_long_sentences_skipped_without_returning_truncation(tmp_path: Path):
     assert examples[0].sentence == "Він узяв автомат до рук."
     saved = json.loads(next((tmp_path / "examples").glob("*.json")).read_text())
     assert saved["skipped"] == [{"toknum": 5, "reason": "sentence_too_long", "hitlen": 101}]
+    assert saved["retrieval_stats"]["skipped_by_reason"] == {"sentence_too_long": 1}
 
 
 def test_empty_results_and_zero_limit():
@@ -126,6 +135,41 @@ def test_seeded_sampling_is_reproducible_and_cache_is_separate(tmp_path: Path):
     assert len({x.example_id for x in a}) == 4
     assert [x.example_id for x in a] != [x.example_id for x in c]
     assert all(x.source_metadata["seed"] == 42 for x in a)
+
+
+def test_seeded_page_retrieval_is_bounded_and_preserves_output_order():
+    rows = [line(i, ["автомат", str(i)]) for i in range(40)]
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    def handler(request):
+        nonlocal active, max_active
+        if request.url.path.endswith("/corp_info"):
+            return httpx.Response(200, json=INFO)
+        params = request.url.params
+        page_size = int(params["pagesize"])
+        start = (int(params["fromp"]) - 1) * page_size
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return httpx.Response(200, json=response(
+            rows[start:start + page_size], total=len(rows)))
+
+    concurrent = client_for(
+        handler, page_size=2, max_page_concurrency=2,
+    ).retrieve_examples("автомат", 10, seed=42)
+    sequential = client_for(
+        handler, page_size=2, max_page_concurrency=1,
+    ).retrieve_examples("автомат", 10, seed=42)
+
+    assert [(item.example_id, item.sentence) for item in concurrent] == [
+        (item.example_id, item.sentence) for item in sequential
+    ]
+    assert max_active == 2
 
 
 def test_force_refresh_keeps_previous_raw_responses(tmp_path: Path):

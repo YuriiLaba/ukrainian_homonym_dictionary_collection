@@ -5,7 +5,9 @@ import html
 import json
 import random
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from collections.abc import Iterator
@@ -57,6 +59,7 @@ class GracClient:
         resume: bool = True, page_size: int = 100, max_retries: int = 3,
         poll_attempts: int = 15, request_interval: float = 0.5,
         max_sentence_tokens: int = 100, seed: int | None = None,
+        max_page_concurrency: int = 1,
     ):
         parts = urlsplit(endpoint)
         if parts.scheme not in {"http", "https"} or not parts.netloc or parts.query or parts.fragment:
@@ -65,8 +68,9 @@ class GracClient:
         path = parts.path if parts.path.strip("/") else "/bonito/run.cgi/"
         self.endpoint = urlunsplit((parts.scheme, parts.netloc, path.rstrip("/") + "/", "", ""))
         self.corpus = "grac19" if corpus == "Grac v.19" else corpus
-        if not self.corpus or page_size < 1 or max_retries < 0 or poll_attempts < 1:
-            raise ValueError("invalid corpus, page_size, max_retries or poll_attempts")
+        if (not self.corpus or page_size < 1 or max_retries < 0 or poll_attempts < 1
+                or max_page_concurrency < 1):
+            raise ValueError("invalid corpus, page_size, max_retries, poll_attempts or max_page_concurrency")
         if request_interval < 0 or not 1 <= max_sentence_tokens <= 100:
             raise ValueError("request_interval must be >= 0; max_sentence_tokens must be 1..100")
         self.client = client or httpx.Client(timeout=timeout, headers={"User-Agent": user_agent})
@@ -76,12 +80,19 @@ class GracClient:
         self.max_retries, self.poll_attempts = max_retries, poll_attempts
         self.request_interval = request_interval
         self.max_sentence_tokens, self.seed = max_sentence_tokens, seed
+        self.max_page_concurrency = max_page_concurrency
         self._last_request = 0.0
+        self._request_start_lock = threading.Lock()
+        self._retrieval_counter_lock = threading.Lock()
+        self._retrieval_request_attempts = 0
+        self._retrieval_retry_count = 0
+        self.last_retrieval_stats: dict[str, Any] = {}
 
     @classmethod
     def from_config(cls, config: Any, *, cache_dir: Path, resume: bool = True) -> GracClient:
         return cls(config.endpoint, config.corpus, config.timeout_seconds, config.user_agent,
                    cache_dir=cache_dir, resume=resume, page_size=config.page_size,
+                   max_page_concurrency=config.max_page_concurrency,
                    max_retries=config.max_retries, poll_attempts=config.poll_attempts,
                    request_interval=config.request_interval_seconds,
                    max_sentence_tokens=config.max_sentence_tokens, seed=config.seed)
@@ -102,7 +113,7 @@ class GracClient:
     def __exit__(self, *args: Any) -> None:
         self.close()
 
-    def _request(self, action: str, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _request(self, action: str, params: dict[str, Any], *, throttle: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
         params = {"corpname": self.corpus, "format": "json", **params}
         url = self.endpoint + action
         key = content_hash({"url": url, "params": params, "adapter": ADAPTER_VERSION})
@@ -111,10 +122,17 @@ class GracClient:
             record = json.loads(index.read_text(encoding="utf-8"))
             return json.loads(record["response_text"]), record
         for attempt in range(self.max_retries + 1):
-            delay = self.request_interval - (time.monotonic() - self._last_request)
-            if delay > 0:
-                time.sleep(delay)
-            self._last_request = time.monotonic()
+            with self._retrieval_counter_lock:
+                self._retrieval_request_attempts += 1
+                self._retrieval_retry_count += int(attempt > 0)
+            if throttle:
+                # Only sequential requests use the interval throttle. Parallel
+                # page retrieval is bounded by max_page_concurrency instead.
+                with self._request_start_lock:
+                    delay = self.request_interval - (time.monotonic() - self._last_request)
+                    if delay > 0:
+                        time.sleep(delay)
+                    self._last_request = time.monotonic()
             try:
                 response = self.client.get(url, params=params)
             except httpx.TransportError as error:
@@ -148,9 +166,9 @@ class GracClient:
             return payload, record
         raise AssertionError("unreachable")
 
-    def _page(self, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _page(self, params: dict[str, Any], *, throttle: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
         for poll in range(self.poll_attempts):
-            payload, record = self._request("concordance", params)
+            payload, record = self._request("concordance", params, throttle=throttle)
             if payload.get("finished") in (0, "0", False):
                 time.sleep(min(1 + poll, 5))
                 continue
@@ -164,11 +182,52 @@ class GracClient:
             return payload, record
         raise GracError("ГРАК concordance did not finish within the configured polling limit")
 
+    def _retrieve_pages_concurrently(
+        self,
+        params: dict[str, Any],
+        page_numbers: list[int],
+    ) -> dict[int, tuple[dict[str, Any], dict[str, Any]]]:
+        """Retrieve distinct concordance pages with bounded parallelism.
+
+        Page numbers are sorted before submission, and results are collected in
+        that same order. This affects request scheduling only; callers still
+        process sampled ranks in their original seeded order.
+        """
+        page_numbers = sorted(set(page_numbers))
+        if not page_numbers:
+            return {}
+        if self.max_page_concurrency == 1:
+            return {
+                page: self._page({**params, "fromp": page}, throttle=True)
+                for page in page_numbers
+            }
+        with ThreadPoolExecutor(
+            max_workers=min(self.max_page_concurrency, len(page_numbers))
+        ) as executor:
+            futures = [
+                executor.submit(self._page, {**params, "fromp": page}, throttle=False)
+                for page in page_numbers
+            ]
+            return {
+                page: future.result()
+                for page, future in zip(page_numbers, futures)
+            }
+
     def retrieve_examples(self, lemma: str, max_examples: int, seed: int | None = None) -> list[CandidateExample]:
         cql = sentence_query(lemma)
         if max_examples < 0:
             raise ValueError("max_examples must be >= 0")
         if max_examples == 0:
+            self.last_retrieval_stats = {
+                "total_sentence_hits": 0,
+                "pages_requested": 0,
+                "raw_rows_examined": 0,
+                "eligible_candidates": 0,
+                "skipped_by_reason": {},
+                "duplicate_rows_skipped": 0,
+                "request_attempts": 0,
+                "retry_count": 0,
+            }
             return []
         seed = self.seed if seed is None else seed
         result_key = content_hash({**self.cache_identity, "lemma": lemma,
@@ -176,7 +235,30 @@ class GracClient:
         result_path = self.cache_dir / "examples" / f"{result_key}.json" if self.cache_dir else None
         if self.resume and result_path and result_path.exists():
             saved = json.loads(result_path.read_text(encoding="utf-8"))
+            saved_stats = saved.get("retrieval_stats")
+            if saved_stats:
+                self.last_retrieval_stats = dict(saved_stats)
+            else:
+                skipped_rows = saved.get("skipped", [])
+                skipped_by_reason: dict[str, int] = {}
+                for skipped_row in skipped_rows:
+                    reason = skipped_row.get("reason", "unknown")
+                    skipped_by_reason[reason] = skipped_by_reason.get(reason, 0) + 1
+                self.last_retrieval_stats = {
+                    "total_sentence_hits": int(saved.get("total_sentence_hits", 0)),
+                    "pages_requested": 0,
+                    "raw_rows_examined": len(saved.get("examples", [])) + len(skipped_rows),
+                    "eligible_candidates": len(saved.get("examples", [])),
+                    "skipped_by_reason": skipped_by_reason,
+                    "duplicate_rows_skipped": 0,
+                    "request_attempts": 0,
+                    "retry_count": 0,
+                }
             return [CandidateExample.model_validate(item) for item in saved["examples"]]
+
+        with self._retrieval_counter_lock:
+            self._retrieval_request_attempts = 0
+            self._retrieval_retry_count = 0
 
         info, info_record = self._request("corp_info", {})
         if not isinstance(info.get("structures"), list) or not isinstance(info.get("attributes"), list):
@@ -197,42 +279,80 @@ class GracClient:
         first, first_record = self._page(params)
         total = first["concsize"]
         # Reproducible local sampling; do not invent a server-side seed parameter.
-        ranks = _sentence_ranks(total, seed)
+        ranks = iter(_sentence_ranks(total, seed))
         pages = {1: (first, first_record)}
         output: list[CandidateExample] = []
         seen: set[str] = set()
         skipped: list[dict[str, Any]] = []
-        for rank in ranks:
-            page, offset = divmod(rank, page_size)
-            page += 1
-            if page not in pages:
-                pages[page] = self._page({**params, "fromp": page})
-            payload, record = pages[page]
-            if payload["concsize"] != total or offset >= len(payload["Lines"]):
-                raise GracError("ГРАК result count/page changed during pagination; retry with fresh cache")
-            row = payload["Lines"][offset]
-            if not isinstance(row, dict) or type(row.get("hitlen")) is not int or row["hitlen"] < 1:
-                raise GracError("ГРАК line is missing its sentence token length")
-            # Bonito displays only 100 initial tokens of long structures.
-            if row["hitlen"] > self.max_sentence_tokens:
-                skipped.append({"toknum": row.get("toknum"), "reason": "sentence_too_long",
-                                "hitlen": row["hitlen"]})
-                continue
-            example = self._parse_line(lemma, cql, row, refs, info, payload, record)
-            if example.example_id in seen:
-                continue
-            seen.add(example.example_id)
-            example.source_metadata.update({
-                "selection_strategy": "corpus_order" if seed is None else "seeded_sentence_ranks",
-                "seed": seed, "result_rank": rank,
-                "corpus_info_raw_path": info_record.get("raw_response_path"),
-            })
-            output.append(example)
-            if len(output) == max_examples:
+        skipped_by_reason: dict[str, int] = {}
+        duplicate_rows_skipped = 0
+        raw_rows_examined = 0
+        # Prefetch a small window of sampled ranks. This preserves the exact
+        # seeded rank order while allowing page requests for that window to run
+        # concurrently without fetching the entire concordance up front.
+        rank_window_size = 1 if seed is None else max(1, self.max_page_concurrency * 10)
+        exhausted = False
+        while len(output) < max_examples and not exhausted:
+            rank_window = []
+            for _ in range(rank_window_size):
+                try:
+                    rank_window.append(next(ranks))
+                except StopIteration:
+                    exhausted = True
+                    break
+            if not rank_window:
                 break
+            needed_pages = []
+            for rank in rank_window:
+                page, _ = divmod(rank, page_size)
+                page += 1
+                if page not in pages:
+                    needed_pages.append(page)
+            pages.update(self._retrieve_pages_concurrently(params, needed_pages))
+
+            for rank in rank_window:
+                page, offset = divmod(rank, page_size)
+                page += 1
+                payload, record = pages[page]
+                if payload["concsize"] != total or offset >= len(payload["Lines"]):
+                    raise GracError("ГРАК result count/page changed during pagination; retry with fresh cache")
+                row = payload["Lines"][offset]
+                raw_rows_examined += 1
+                if not isinstance(row, dict) or type(row.get("hitlen")) is not int or row["hitlen"] < 1:
+                    raise GracError("ГРАК line is missing its sentence token length")
+                # Bonito displays only 100 initial tokens of long structures.
+                if row["hitlen"] > self.max_sentence_tokens:
+                    skipped.append({"toknum": row.get("toknum"), "reason": "sentence_too_long",
+                                    "hitlen": row["hitlen"]})
+                    skipped_by_reason["sentence_too_long"] = skipped_by_reason.get("sentence_too_long", 0) + 1
+                    continue
+                example = self._parse_line(lemma, cql, row, refs, info, payload, record)
+                if example.example_id in seen:
+                    duplicate_rows_skipped += 1
+                    continue
+                seen.add(example.example_id)
+                example.source_metadata.update({
+                    "selection_strategy": "corpus_order" if seed is None else "seeded_sentence_ranks",
+                    "seed": seed, "result_rank": rank,
+                    "corpus_info_raw_path": info_record.get("raw_response_path"),
+                })
+                output.append(example)
+                if len(output) == max_examples:
+                    break
+        self.last_retrieval_stats = {
+            "total_sentence_hits": total,
+            "pages_requested": len(pages),
+            "raw_rows_examined": raw_rows_examined,
+            "eligible_candidates": len(output),
+            "skipped_by_reason": skipped_by_reason,
+            "duplicate_rows_skipped": duplicate_rows_skipped,
+            "request_attempts": self._retrieval_request_attempts,
+            "retry_count": self._retrieval_retry_count,
+        }
         if result_path:
             atomic_write_json(result_path, {"cache_key": result_key, "lemma": lemma,
                               "total_sentence_hits": total, "skipped": skipped,
+                              "retrieval_stats": self.last_retrieval_stats,
                               "examples": [item.model_dump(mode="json") for item in output]})
         return output
 

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 
 from homonym_pipeline.config import load_config
+from homonym_pipeline.logging_utils import configure_pipeline_logging
 from homonym_pipeline.output.manifest import finish_manifest, start_manifest
 from homonym_pipeline.pipeline.baseline import run_baseline
 from homonym_pipeline.output.huggingface import write_huggingface
@@ -12,17 +14,13 @@ from homonym_pipeline.output.writer import write_final
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    for logger_name in ("httpx", "httpx2", "httpcore", "openai", "openai._base_client"):
-        transport_logger = logging.getLogger(logger_name)
-        transport_logger.setLevel(logging.WARNING)
-        transport_logger.propagate = False
     parser = argparse.ArgumentParser(description="Run the dictionary-based Ukrainian homonym pipeline")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--max-lemmas", type=int)
     parser.add_argument("--max-grac-examples", type=int)
+    parser.add_argument("--grac-page-concurrency", type=int)
     parser.add_argument("--embedding-model")
     parser.add_argument("--embedding-top-k", type=int)
     parser.add_argument("--embedding-batch-size", type=int)
@@ -44,6 +42,8 @@ def main() -> None:
         config.pipeline.resume = False
     if args.max_grac_examples is not None:
         config.grac.max_examples_per_lemma = args.max_grac_examples
+    if args.grac_page_concurrency is not None:
+        config.grac.max_page_concurrency = args.grac_page_concurrency
     if args.embedding_model:
         config.embeddings.model = args.embedding_model
     if args.embedding_top_k is not None:
@@ -62,7 +62,12 @@ def main() -> None:
         config.validation.max_final_examples_per_sense = args.max_final_examples_per_sense
     if args.validation_model:
         config.llm.model_validation = args.validation_model
-    manifest = start_manifest("baseline", args.input, args.output, config)
+    manifest = start_manifest(
+        "baseline", args.input, args.output, config,
+        run_parameters={"max_lemmas": args.max_lemmas, "force": args.force, "dry_run": args.dry_run},
+    )
+    configure_pipeline_logging(args.output)
+    logging.info("[run] run_id=%s workflow=baseline", manifest["run_id"])
     from homonym_pipeline.llm.client import LLMClient
     from homonym_pipeline.embeddings.client import EmbeddingClient
     grac = None
@@ -77,10 +82,12 @@ def main() -> None:
             grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume,
             run_id=manifest["run_id"],
         )
+        stage3_started = time.perf_counter()
         logging.info("[stage 3/3] Writing final dictionary, Hugging Face export, and statistics.")
         write_final(entries, args.output)
         write_huggingface(entries, args.output)
-        stats = calculate_statistics(entries, args.output, run_id=manifest["run_id"])
+        stats = calculate_statistics(entries, args.output, run_id=manifest["run_id"], config=config)
+        logging.info("[stage 3/3] Complete. Processing time: %.2f seconds.", time.perf_counter() - stage3_started)
         status = "completed_with_failures" if stats.get("failed_lemmas", 0) else "completed"
         finish_manifest(args.output, status=status, statistics=stats)
     except Exception:

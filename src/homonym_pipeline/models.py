@@ -143,12 +143,19 @@ class FinalLemmaEntry(BaseModel):
 
 
 class LLMCallRecord(BaseModel):
+    run_id: str | None = None
+    workflow: str | None = None
+    stage: str | None = None
+    lemma: str | None = None
+    sense_id: str | None = None
     request_id: str | None = None
     model: str
     prompt_version: str
     temperature: float | None = None
     reasoning_effort: str | None = None
     requested_at: datetime = Field(default_factory=utc_now)
+    elapsed_seconds: float | None = None
+    attempts: int | None = None
     usage: dict[str, Any] = Field(default_factory=dict)
     raw_response: dict[str, Any] = Field(default_factory=dict)
 
@@ -172,6 +179,22 @@ class LemmaAuditRecord(BaseModel):
     lemma: str
     status: Literal["success", "failed"]
     elapsed_seconds: float = 0.0
+    grac_elapsed_seconds: float = 0.0
+    embedding_elapsed_seconds: float = 0.0
+    validation_elapsed_seconds: float = 0.0
+    finalization_elapsed_seconds: float = 0.0
+    wikipedia_elapsed_seconds: float = 0.0
+    gloss_augmentation_elapsed_seconds: float = 0.0
+    wikipedia_cache_hit: bool = False
+    terra_cache_hit: bool = False
+    grac_total_sentence_hits: int = 0
+    grac_pages_requested: int = 0
+    grac_raw_rows_examined: int = 0
+    grac_skipped_by_reason: dict[str, int] = Field(default_factory=dict)
+    grac_duplicate_rows_skipped: int = 0
+    grac_request_attempts: int = 0
+    grac_retry_count: int = 0
+    grac_cache_hit: bool = False
     input_glosses: int = 0
     wikipedia_candidates: int = 0
     terra_actions: dict[str, int] = Field(default_factory=dict)
@@ -184,6 +207,10 @@ class LemmaAuditRecord(BaseModel):
     validation_batches: int = 0
     validation_cache_hits: int = 0
     llm_assignments: int = 0
+    validation_model_accepted: int = 0
+    validation_model_rejected: int = 0
+    validation_confidence_sum: float = 0.0
+    validation_confidence_count: int = 0
     accepted_before_final_cap: int = 0
     rejected_by_reason: dict[str, int] = Field(default_factory=dict)
     final_glosses: int = 0

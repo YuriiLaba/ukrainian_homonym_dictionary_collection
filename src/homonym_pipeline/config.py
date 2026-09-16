@@ -14,6 +14,8 @@ class LLMConfig(BaseModel):
     reasoning_effort: str = "medium"
     max_retries: int = 3
     api_key_env: str = "OPENAI_API_KEY"
+    # Optional USD prices per one million tokens, keyed by model name.
+    pricing: dict[str, dict[str, float]] = Field(default_factory=dict)
 
 
 class GracConfig(BaseModel):
@@ -24,6 +26,7 @@ class GracConfig(BaseModel):
     timeout_seconds: float = Field(default=30.0, gt=0)
     user_agent: str = "ukrainian-homonym-pipeline/0.1"
     page_size: int = Field(default=100, ge=1, le=1000)
+    max_page_concurrency: int = Field(default=4, ge=1)
     max_retries: int = Field(default=3, ge=0)
     poll_attempts: int = Field(default=15, ge=1)
     request_interval_seconds: float = Field(default=0.5, ge=0)
@@ -50,6 +53,8 @@ class EmbeddingConfig(BaseModel):
     max_retries: int = Field(default=3, ge=0)
     api_key_env: str = "OPENAI_API_KEY"
     dimensions: int | None = Field(default=None, gt=0)
+    # Optional USD price per one million input tokens, keyed by model name.
+    pricing: dict[str, float] = Field(default_factory=dict)
 
 
 class PipelineConfig(BaseModel):

@@ -62,13 +62,18 @@ Queries can compute asynchronously: retrieval polls until completion, paginates,
 retries transient HTTP failures with bounded backoff. Non-JSON responses, permission
 failures, backend errors and incompatible response shapes raise explicit errors.
 The standalone command exits unsuccessfully on such errors and does not write an empty
-success output. Requests are spaced 0.5 seconds apart by default.
+success output. GRAC pages are retrieved with bounded concurrency
+(`grac.max_page_concurrency`, default 4) when seeded sampling requires multiple pages.
+Set it to 1 to use sequential retrieval; in that mode, `request_interval_seconds` spaces
+requests by default.
 
 By default examples are taken in corpus order. This is reproducible but is not a
 representative sample and may favor older sources. Pass `--seed 42` (or configure
 `grac.seed`) for reproducible sampling of sentence ranks across the full concordance.
 Sampling is implemented locally without assuming a server seed API; it can require
-more page requests. Record counts refer to sentences, not individual lemma occurrences.
+more page requests. Page requests are prefetched in deterministic windows, but sampled
+ranks are processed in their original order. Record counts refer to sentences, not
+individual lemma occurrences.
 Sentences above 100 tokens are skipped because Bonito can truncate long matches; their
 raw rows and skip reasons remain in the cache. Fewer examples may be returned if there
 are insufficient eligible sentences.
@@ -148,7 +153,7 @@ stage emits records like:
 ```text
 [filter] Removed 2 single-gloss lemmas. Processing 1749 of 1751 lemmas.
 [input] 1749 lemmas, 4260 glosses; 1749 lemmas have multiple glosses.
-[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started. Embedding concurrency: 4; Luna concurrency: 8.
+[stage 2/3] GRAC retrieval, embedding reranking, and Luna validation started. GRAC page concurrency: 4; embedding concurrency: 4; Luna concurrency: 8.
 
 [2/1749] аверс
   GRAC candidates: 1000
@@ -156,7 +161,11 @@ stage emits records like:
   Supported senses: 1/2
   Lemmas with 2+ supported senses: 1/1749
   Processed glosses: 4/4260
-  Processing time: 12.37 seconds
+  GRAC retrieval time: 18.42 seconds
+  Embedding time: 2.31 seconds
+  Luna validation time: 31.76 seconds
+  Finalization time: 0.02 seconds
+  Total processing time: 52.51 seconds
 
 [stage 2/3] Complete.
   Processed lemmas: 1749/1749
@@ -183,8 +192,41 @@ root. The manifest records the workflow, input SHA-256, configuration, Python an
 dependency versions, Git revision when available, completion status, aggregate
 statistics, and output artifact hashes. `audit/lemma_audit.jsonl` contains one
 cache-addressed record per lemma with Wikipedia/Terra, GRAC, validation, rejection,
-final-cap, timing, and failure metrics. Aggregate statistics use the latest audit and
-cache records for the current run, so historical retries do not inflate counts.
+final-cap, stage-specific timing, total timing, and failure metrics. The timing fields
+are `grac_elapsed_seconds`, `embedding_elapsed_seconds`,
+`validation_elapsed_seconds`, `finalization_elapsed_seconds`, and `elapsed_seconds`.
+GRAC audit metrics additionally include total corpus hits, pages requested, raw rows
+examined, skipped rows by reason, duplicate rows, and cache hits. The run-level
+`run_input_statistics.json` records original lemmas, filtering, `--max-lemmas`, and
+the Wikipedia augmentation count. `pipeline_statistics.json` aggregates these values
+and separates LLM calls and token usage by stage. Optional cost estimates can be
+enabled with per-model prices in `config.yaml`, for example:
+
+```yaml
+llm:
+  pricing:
+    gpt-5.6-luna:
+      input_per_million_tokens: 1.0
+      output_per_million_tokens: 5.0
+embeddings:
+  pricing:
+    text-embedding-3-small: 0.02
+```
+
+If a price is missing, the corresponding estimated cost is reported as `null` rather
+than being guessed.
+
+Each completed manifest also records run-level elapsed time and hashes the main log,
+audit, intermediate, and final artifacts. LLM call records are tagged with run,
+workflow, stage, lemma, sense, request attempts, and elapsed time so token and cost
+statistics remain scoped to the current run.
+Aggregate statistics use the latest audit and cache records for the current run, so
+historical retries do not inflate counts.
+
+The same concise progress messages shown in the terminal are also appended to
+`logs/pipeline.log`, including per-lemma GRAC, embedding, Luna, finalization, and total
+processing times. Low-level HTTP and OpenAI transport messages are excluded from this
+log.
 
 The integration was verified with the public Grac v.19 backend
 (`open-5.71.15`). It is a website interface and can change; the adapter intentionally
