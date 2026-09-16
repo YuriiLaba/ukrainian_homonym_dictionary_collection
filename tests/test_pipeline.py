@@ -98,9 +98,10 @@ def test_shared_pipeline_aggregates_and_resumes(tmp_path: Path, caplog):
     fake = FakeLLM(AssignmentResponse(assignments=[LLMAssignment(example_id="e1", accepted=True, sense_id="s1", confidence=0.95, reason="ok")]))
     first = run_shared(entries, tmp_path, config, fixture, fake, resume=True)
     assert first[0].glosses[0].examples[0].example_id == "e1"
-    assert "glosses processed: 1" in caplog.text
-    assert "glosses with >=1 final example: 1" in caplog.text
-    assert "GRAC candidates retrieved: 1" in caplog.text
+    assert "[input] lemmas=1 glosses=1 multi_gloss_lemmas=0" in caplog.text
+    assert "[progress] 1/1 lemma=автомат lemma_grac_candidates=1" in caplog.text
+    assert "lemma_glosses_with_examples=1" in caplog.text
+    assert "[summary] processed_lemmas=1 glosses=1 glosses_with_examples=1" in caplog.text
 
     class FailingGrac(FixtureGracClient):
         def retrieve_examples(self, lemma, max_examples, seed=None):

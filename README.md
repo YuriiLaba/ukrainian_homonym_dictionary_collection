@@ -107,11 +107,20 @@ highest-confidence examples are selected, with original validation order breakin
 ties. All validation results remain in `validation/llm_assignments.jsonl`. The limit
 can be changed from the CLI with `--max-final-examples-per-sense`.
 
-The full workflow commands report progress in the terminal after each lemma, including
-the number of glosses processed and the number with at least one final validated
-example, as well as the current count of lemmas with at least two glosses. They also
-print the number of GRAC candidates for each lemma and a cumulative summary; detailed
-validation records remain in the output JSONL files.
+The full workflow commands use compact, machine-readable terminal labels. The shared
+stage emits records like:
+
+```text
+[input] lemmas=3 glosses=7 multi_gloss_lemmas=2
+[stage] grac_retrieval_and_luna_validation total_lemmas=3
+[progress] 2/3 lemma=абориген lemma_grac_candidates=12 lemma_glosses=1 lemma_glosses_with_examples=1 cumulative_multi_gloss_lemmas=1 cumulative_glosses=3/7
+[summary] processed_lemmas=3 glosses=7 glosses_with_examples=6 multi_gloss_lemmas=2 grac_candidates=34
+```
+
+The progress record includes the current lemma's GRAC candidate count, gloss count,
+glosses with at least one final validated example, and cumulative counters. Detailed
+validation records remain in the output JSONL files; the manifest and audit files are
+the authoritative source for later statistical analysis.
 
 Each CLI run also writes `run_manifest.json` and `config.snapshot.yaml` at the output
 root. The manifest records the workflow, input SHA-256, configuration, Python and

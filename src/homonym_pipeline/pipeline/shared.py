@@ -51,9 +51,12 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     lemmas_with_multiple_glosses = 0
     grac_candidates_retrieved = 0
     logger.info(
-        "Stage 2/3: GRAC candidate retrieval and Luna validation for %d lemmas.",
+        "[input] lemmas=%d glosses=%d multi_gloss_lemmas=%d",
         total_lemmas,
+        sum(len(entry.glosses) for entry in entries),
+        sum(len(entry.glosses) >= 2 for entry in entries),
     )
+    logger.info("[stage] grac_retrieval_and_luna_validation total_lemmas=%d", total_lemmas)
 
     for index, entry in enumerate(entries, start=1):
         lemma_started = time.perf_counter()
@@ -161,9 +164,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
             if len(final_entry.glosses) >= 2:
                 lemmas_with_multiple_glosses += 1
             logger.info(
-                "[%d/%d] %s — GRAC candidates retrieved: %d; glosses processed: %d; "
-                "glosses with >=1 final example: %d; lemmas with >=2 glosses: %d "
-                "(cumulative: %d/%d glosses)",
+                "[progress] %d/%d lemma=%s lemma_grac_candidates=%d lemma_glosses=%d "
+                "lemma_glosses_with_examples=%d cumulative_multi_gloss_lemmas=%d "
+                "cumulative_glosses=%d/%d",
                 index,
                 total_lemmas,
                 entry.lemma,
@@ -171,8 +174,8 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 len(final_entry.glosses),
                 sum(1 for sense in final_entry.glosses if sense.examples),
                 lemmas_with_multiple_glosses,
-                glosses_with_examples,
                 processed_glosses,
+                sum(len(item.glosses) for item in entries),
             )
         except Exception as error:
             append_jsonl(failures_path, FailureRecord(stage="shared", lemma=entry.lemma,
@@ -204,11 +207,9 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 failures_path,
             )
     logger.info(
-        "Stage 2/3 complete: %d/%d lemmas; %d glosses processed; "
-        "%d glosses with >=1 final example; %d lemmas with >=2 glosses; "
-        "%d GRAC candidates retrieved.",
+        "[summary] processed_lemmas=%d glosses=%d glosses_with_examples=%d "
+        "multi_gloss_lemmas=%d grac_candidates=%d",
         processed_lemmas,
-        total_lemmas,
         processed_glosses,
         glosses_with_examples,
         lemmas_with_multiple_glosses,

@@ -13,7 +13,7 @@ from homonym_pipeline.pipeline.wikipedia_augmented import run_wikipedia_augmente
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    for logger_name in ("httpx", "httpcore", "openai", "openai._base_client"):
+    for logger_name in ("httpx", "httpx2", "httpcore", "openai", "openai._base_client"):
         transport_logger = logging.getLogger(logger_name)
         transport_logger.setLevel(logging.WARNING)
         transport_logger.propagate = False
@@ -55,7 +55,7 @@ def main() -> None:
         grac = JsonFileGracClient(args.grac_fixture)
     try:
         entries = run_wikipedia_augmented(args.input, args.output, config, llm=LLMClient(config.llm, dry_run=args.dry_run), grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume, run_id=manifest["run_id"])
-        logging.info("Stage 3/3: writing final dictionary, Hugging Face export, and statistics.")
+        logging.info("[stage] writing_final_dictionary_huggingface_export_and_statistics")
         write_final(entries, args.output)
         write_huggingface(entries, args.output)
         stats = calculate_statistics(entries, args.output, run_id=manifest["run_id"])

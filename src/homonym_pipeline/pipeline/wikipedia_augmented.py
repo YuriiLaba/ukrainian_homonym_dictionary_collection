@@ -40,7 +40,7 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
     normalized_cache = latest_by_cache_key(normalized_path)
     entries: list[LemmaEntry] = []
     stage_metadata: dict[str, dict[str, object]] = {}
-    logger.info("Stage 1/3: Wikipedia retrieval and Terra gloss augmentation for %d lemmas.", len(lemmas))
+    logger.info("[stage] wikipedia_retrieval_and_terra_augmentation total_lemmas=%d", len(lemmas))
     for index, lemma in enumerate(lemmas, start=1):
         lemma_started = time.perf_counter()
         candidates = []
@@ -84,8 +84,8 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
             }
             entries.append(LemmaEntry(lemma=lemma, glosses=glosses))
             logger.info(
-                "Stage 1/3 [%d/%d] %s — Wikipedia candidates: %d; glosses after Terra: %d; "
-                "lemmas with >=2 glosses: %d.",
+                "[progress] %d/%d lemma=%s wikipedia_candidates=%d lemma_glosses=%d "
+                "cumulative_multi_gloss_lemmas=%d",
                 index,
                 len(lemmas),
                 lemma,
@@ -111,7 +111,8 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
                 "cache_key": content_hash({"stage": "lemma_audit", "run_id": run_id or "untracked", "lemma": lemma}),
                 **failed_audit.model_dump(mode="json"),
             })
-            logger.error("Stage 1/3 [%d/%d] %s — failed: %s", index, len(lemmas), lemma, error)
+            logger.error("[error] stage=wikipedia_augmentation progress=%d/%d lemma=%s error=%s",
+                         index, len(lemmas), lemma, error)
     owns_grac = grac is None
     grac = grac or GracClient.from_config(
         config.grac, cache_dir=root / "grac" / "cache", resume=resume)
