@@ -69,7 +69,7 @@ class LLMAssignment(BaseModel):
 
     example_id: str
     accepted: bool
-    sense_id: str | None = None
+    sense_id: str | None
     model_confidence: float = Field(ge=0.0, le=1.0, alias="confidence")
     reason: str
 
@@ -110,11 +110,11 @@ class GlossDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: Literal["keep", "refine", "add", "remove", "merge", "merge_uncertain"]
-    candidate_id: str | None = None
+    candidate_id: str | None
     gloss: str
-    original_gloss: str | None = None
-    evidence_candidate_ids: list[str] = Field(default_factory=list)
-    merge_into_candidate_id: str | None = None
+    original_gloss: str | None
+    evidence_candidate_ids: list[str]
+    merge_into_candidate_id: str | None
     reason: str
 
 

@@ -224,13 +224,16 @@ def test_confirmed_merge_produces_one_gloss_and_preserves_references():
             action="keep",
             candidate_id="wp_1",
             gloss="Машина або пристрій, що діє автоматично",
+            original_gloss=None,
             evidence_candidate_ids=["wp_1"],
+            merge_into_candidate_id=None,
             reason="Основний кандидат.",
         ),
         GlossDecision(
             action="merge",
             candidate_id="wp_2",
             gloss="Пристрій, який виконує операції автоматично",
+            original_gloss=None,
             evidence_candidate_ids=["wp_2"],
             merge_into_candidate_id="wp_1",
             reason="Семантично еквівалентне значення.",
@@ -261,11 +264,21 @@ def test_uncertain_merge_remains_separate_and_is_marked():
         ),
     ]
     decisions = [
-        GlossDecision(action="keep", candidate_id="wp_1", gloss="Зброя", reason="Окреме значення."),
+        GlossDecision(
+            action="keep",
+            candidate_id="wp_1",
+            gloss="Зброя",
+            original_gloss=None,
+            evidence_candidate_ids=[],
+            merge_into_candidate_id=None,
+            reason="Окреме значення.",
+        ),
         GlossDecision(
             action="merge_uncertain",
             candidate_id="wp_2",
             gloss="Автоматичний пристрій",
+            original_gloss=None,
+            evidence_candidate_ids=[],
             merge_into_candidate_id="wp_1",
             reason="Потребує ручної перевірки.",
         ),
@@ -283,6 +296,9 @@ def test_added_sense_without_wikipedia_evidence_is_not_accepted():
             action="add",
             candidate_id=None,
             gloss="Непідтверджене значення",
+            original_gloss=None,
+            evidence_candidate_ids=[],
+            merge_into_candidate_id=None,
             reason="Загальні знання моделі.",
         )
     ]
