@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from homonym_pipeline.config import AppConfig
@@ -14,6 +15,9 @@ from homonym_pipeline.models import FailureRecord, Gloss
 from homonym_pipeline.pipeline.shared import run_shared
 from homonym_pipeline.retrieval.grac import GracClient
 from homonym_pipeline.storage import append_jsonl, latest_by_cache_key
+
+
+logger = logging.getLogger(__name__)
 
 
 def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, config: AppConfig,
@@ -33,7 +37,8 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
     raw_cache = latest_by_cache_key(raw_path)
     normalized_cache = latest_by_cache_key(normalized_path)
     entries: list[LemmaEntry] = []
-    for lemma in lemmas:
+    logger.info("Stage 1/3: Wikipedia retrieval and Terra gloss augmentation for %d lemmas.", len(lemmas))
+    for index, lemma in enumerate(lemmas, start=1):
         try:
             raw_key = content_hash({"stage": "wikipedia_raw", "lemma": lemma, "fallback": config.pipeline.wikipedia_search_fallback})
             raw_record = raw_cache.get(raw_key) if resume else None
@@ -64,9 +69,18 @@ def run_wikipedia_augmented(input_path: str | Path, output_dir: str | Path, conf
                 normalized_cache[norm_key] = normalized_record
                 append_jsonl(calls_path, {"cache_key": norm_key, **call_record.model_dump(mode="json")})
             entries.append(LemmaEntry(lemma=lemma, glosses=glosses))
+            logger.info(
+                "Stage 1/3 [%d/%d] %s — Wikipedia candidates: %d; glosses after Terra: %d.",
+                index,
+                len(lemmas),
+                lemma,
+                len(candidates),
+                len(glosses),
+            )
         except Exception as error:
             append_jsonl(failures_path, FailureRecord(stage="wikipedia_augmentation", lemma=lemma,
                                                       error_type=type(error).__name__, message=str(error)))
+            logger.error("Stage 1/3 [%d/%d] %s — failed: %s", index, len(lemmas), lemma, error)
     owns_grac = grac is None
     grac = grac or GracClient.from_config(
         config.grac, cache_dir=root / "grac" / "cache", resume=resume)

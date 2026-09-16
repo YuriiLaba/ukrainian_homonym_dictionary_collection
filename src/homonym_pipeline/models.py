@@ -65,7 +65,7 @@ class CandidateExample(BaseModel):
 
 
 class LLMAssignment(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     example_id: str
     accepted: bool
@@ -107,6 +107,8 @@ class WikipediaCandidate(BaseModel):
 
 
 class GlossDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     action: Literal["keep", "refine", "add", "remove", "merge", "merge_uncertain"]
     candidate_id: str | None = None
     gloss: str

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from homonym_pipeline.config import AppConfig
@@ -9,6 +10,9 @@ from homonym_pipeline.llm.client import LLMClient
 from homonym_pipeline.pipeline.shared import run_shared
 from homonym_pipeline.retrieval.grac import GracClient
 from homonym_pipeline.storage import append_jsonl
+
+
+logger = logging.getLogger(__name__)
 
 
 def run_baseline(input_path: str | Path, output_dir: str | Path, config: AppConfig,
@@ -24,6 +28,11 @@ def run_baseline(input_path: str | Path, output_dir: str | Path, config: AppConf
             "lemma": entry.lemma,
             "glosses": [item.model_dump(mode="json") for item in entry.glosses],
         })
+    logger.info(
+        "Stage 1/3 complete: dictionary input loaded — %d lemmas and %d glosses.",
+        len(entries),
+        sum(len(entry.glosses) for entry in entries),
+    )
     llm = llm or LLMClient(config.llm)
     owns_grac = grac is None
     grac = grac or GracClient.from_config(

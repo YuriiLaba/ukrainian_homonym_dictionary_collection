@@ -12,6 +12,8 @@ from homonym_pipeline.pipeline.wikipedia_augmented import run_wikipedia_augmente
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    for logger_name in ("httpx", "httpcore", "openai", "openai._base_client"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description="Run the Wikipedia-augmented Ukrainian homonym pipeline")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
@@ -48,6 +50,7 @@ def main() -> None:
         from homonym_pipeline.retrieval.grac import JsonFileGracClient
         grac = JsonFileGracClient(args.grac_fixture)
     entries = run_wikipedia_augmented(args.input, args.output, config, llm=LLMClient(config.llm, dry_run=args.dry_run), grac=grac, max_lemmas=args.max_lemmas, resume=config.pipeline.resume)
+    logging.info("Stage 3/3: writing final dictionary, Hugging Face export, and statistics.")
     write_final(entries, args.output)
     write_huggingface(entries, args.output)
     calculate_statistics(entries, args.output)

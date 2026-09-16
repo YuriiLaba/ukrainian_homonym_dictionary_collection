@@ -40,7 +40,10 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
     processed_lemmas = 0
     processed_glosses = 0
     glosses_with_examples = 0
-    logger.info("Starting shared pipeline for %d lemmas.", total_lemmas)
+    logger.info(
+        "Stage 2/3: GRAC candidate retrieval and Luna validation for %d lemmas.",
+        total_lemmas,
+    )
 
     for index, entry in enumerate(entries, start=1):
         try:
@@ -127,7 +130,7 @@ def run_shared(entries: list[LemmaEntry], output_dir: str | Path, config: AppCon
                 failures_path,
             )
     logger.info(
-        "Completed shared pipeline: %d/%d lemmas; %d glosses processed; "
+        "Stage 2/3 complete: %d/%d lemmas; %d glosses processed; "
         "%d glosses with >=1 final example.",
         processed_lemmas,
         total_lemmas,

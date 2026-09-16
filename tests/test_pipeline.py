@@ -289,6 +289,18 @@ def test_added_sense_without_wikipedia_evidence_is_not_accepted():
     assert _decisions_to_glosses("автомат", decisions, []) == []
 
 
+def test_llm_response_schemas_are_strict_at_nested_object_levels():
+    assignment_schema = AssignmentResponse.model_json_schema()
+    assignment_item = assignment_schema["$defs"]["LLMAssignment"]
+    assert assignment_schema["additionalProperties"] is False
+    assert assignment_item["additionalProperties"] is False
+
+    augmentation_schema = GlossAugmentationResponse.model_json_schema()
+    decision_item = augmentation_schema["$defs"]["GlossDecision"]
+    assert augmentation_schema["additionalProperties"] is False
+    assert decision_item["additionalProperties"] is False
+
+
 def test_uncertain_merge_metadata_reaches_rich_final_dictionary(tmp_path: Path):
     target = Gloss(sense_id="s_target", lemma="автомат", gloss="Зброя", source="wikipedia")
     uncertain = Gloss(
