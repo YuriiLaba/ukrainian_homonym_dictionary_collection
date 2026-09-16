@@ -120,8 +120,10 @@ class _FakeResponse:
 class _FakeResponses:
     def __init__(self, outputs):
         self.outputs = iter(outputs)
+        self.calls = []
 
     def create(self, **kwargs):
+        self.calls.append(kwargs)
         output = next(self.outputs)
         if isinstance(output, Exception):
             raise output
@@ -153,6 +155,24 @@ def test_llm_retry_then_valid_response(monkeypatch):
     result = client.structured(model="gpt-5.6-luna", prompt_version="test", system="", user="", schema=AssignmentResponse)
     assert result.parsed.assignments == []
     assert result.call_record.request_id == "resp_test"
+
+
+def test_reasoning_model_request_omits_temperature_when_unset():
+    from homonym_pipeline.llm.client import LLMClient
+
+    config = AppConfig().llm
+    config.temperature = None
+    fake_openai = _FakeOpenAI([json.dumps({"assignments": []})])
+    client = LLMClient(config, client=fake_openai)
+    client.structured(
+        model="gpt-5.6-luna",
+        prompt_version="test",
+        system="",
+        user="{}",
+        schema=AssignmentResponse,
+    )
+    assert "temperature" not in fake_openai.responses.calls[0]
+    assert fake_openai.responses.calls[0]["reasoning"] == {"effort": config.reasoning_effort}
 
 
 def test_missing_assignment_is_rejected():

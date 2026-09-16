@@ -146,7 +146,7 @@ class LLMCallRecord(BaseModel):
     request_id: str | None = None
     model: str
     prompt_version: str
-    temperature: float
+    temperature: float | None = None
     reasoning_effort: str | None = None
     requested_at: datetime = Field(default_factory=utc_now)
     usage: dict[str, Any] = Field(default_factory=dict)

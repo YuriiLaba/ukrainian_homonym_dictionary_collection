@@ -54,13 +54,12 @@ class LLMClient:
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
             try:
-                response = self.client.responses.create(
-                    model=model,
-                    instructions=system,
-                    input=user,
-                    temperature=self.config.temperature,
-                    reasoning={"effort": self.config.reasoning_effort},
-                    text={
+                request = {
+                    "model": model,
+                    "instructions": system,
+                    "input": user,
+                    "reasoning": {"effort": self.config.reasoning_effort},
+                    "text": {
                         "format": {
                             "type": "json_schema",
                             "name": schema.__name__.lower(),
@@ -68,7 +67,10 @@ class LLMClient:
                             "schema": schema.model_json_schema(),
                         }
                     },
-                )
+                }
+                if self.config.temperature is not None:
+                    request["temperature"] = self.config.temperature
+                response = self.client.responses.create(**request)
                 raw = response.model_dump(mode="json") if hasattr(response, "model_dump") else dict(response)
                 output_text = getattr(response, "output_text", None)
                 if not output_text:

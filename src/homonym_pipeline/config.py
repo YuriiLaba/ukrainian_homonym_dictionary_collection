@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 class LLMConfig(BaseModel):
     model_gloss: str = "gpt-5.6-terra"
     model_validation: str = "gpt-5.6-luna"
-    temperature: float = 0.0
+    temperature: float | None = None
     reasoning_effort: str = "medium"
     max_retries: int = 3
     api_key_env: str = "OPENAI_API_KEY"
