@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import gzip
 import threading
 import time
 from pathlib import Path
@@ -96,6 +97,32 @@ def test_pagination_metadata_raw_cache_and_offline_replay(tmp_path: Path):
     def offline(_):
         pytest.fail("a completed cache must make no network requests")
     replay = client_for(offline, cache_dir=tmp_path, page_size=2)
+    assert replay.retrieve_examples("автомат", 3) == examples
+
+
+def test_compressed_raw_cache_stores_response_once(tmp_path: Path):
+    examples = client_for(
+        transport_for(LINES, []),
+        cache_dir=tmp_path,
+        page_size=2,
+        raw_cache_compression="gzip",
+        store_raw_line=False,
+    ).retrieve_examples("автомат", 3)
+
+    raw_files = list((tmp_path / "raw").glob("*.json.gz"))
+    assert raw_files
+    assert all("raw_line" not in item.source_metadata for item in examples)
+
+    request_files = list((tmp_path / "requests").glob("*.json"))
+    assert request_files
+    index = json.loads(request_files[0].read_text(encoding="utf-8"))
+    assert "response_text" not in index
+    with gzip.open(raw_files[0], "rt", encoding="utf-8") as handle:
+        assert "response_text" in json.load(handle)
+
+    replay = client_for(lambda _: pytest.fail("cache miss"), cache_dir=tmp_path,
+                        page_size=2, raw_cache_compression="gzip",
+                        store_raw_line=False)
     assert replay.retrieve_examples("автомат", 3) == examples
 
 

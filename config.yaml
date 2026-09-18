@@ -19,6 +19,8 @@ grac:
   request_interval_seconds: 0.5
   max_sentence_tokens: 100
   seed: 42  # corpus order; set an integer for reproducible random sentence ranks
+  raw_cache_compression: gzip
+  store_raw_line: false
 validation:
   min_confidence: 0.8
   batch_size: 20

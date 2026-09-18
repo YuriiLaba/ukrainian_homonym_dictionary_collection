@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -32,6 +32,12 @@ class GracConfig(BaseModel):
     request_interval_seconds: float = Field(default=0.5, ge=0)
     max_sentence_tokens: int = Field(default=100, ge=1, le=100)
     seed: int | None = None
+    # Raw responses remain available for audit, but are compressed and stored
+    # only once.  The request index contains a pointer rather than a copy.
+    raw_cache_compression: Literal["gzip", "none"] = "gzip"
+    # The complete Bonito row is already preserved in the raw response.  Keep
+    # only its source coordinates in each example by default.
+    store_raw_line: bool = False
 
 
 class ValidationConfig(BaseModel):

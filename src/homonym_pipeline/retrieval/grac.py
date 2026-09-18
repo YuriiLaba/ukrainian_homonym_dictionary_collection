@@ -18,7 +18,7 @@ import httpx
 
 from homonym_pipeline.hashing import content_hash, example_id
 from homonym_pipeline.models import CandidateExample
-from homonym_pipeline.storage import atomic_write_json
+from homonym_pipeline.storage import atomic_write_gzip_json, atomic_write_json
 
 DEFAULT_ENDPOINT = "https://sketch.uacorpus.org/bonito/run.cgi/"
 ADAPTER_VERSION = "grac_bonito_sentences_v1"
@@ -59,7 +59,8 @@ class GracClient:
         resume: bool = True, page_size: int = 100, max_retries: int = 3,
         poll_attempts: int = 15, request_interval: float = 0.5,
         max_sentence_tokens: int = 100, seed: int | None = None,
-        max_page_concurrency: int = 1,
+        max_page_concurrency: int = 1, raw_cache_compression: str = "none",
+        store_raw_line: bool = True,
     ):
         parts = urlsplit(endpoint)
         if parts.scheme not in {"http", "https"} or not parts.netloc or parts.query or parts.fragment:
@@ -73,6 +74,8 @@ class GracClient:
             raise ValueError("invalid corpus, page_size, max_retries, poll_attempts or max_page_concurrency")
         if request_interval < 0 or not 1 <= max_sentence_tokens <= 100:
             raise ValueError("request_interval must be >= 0; max_sentence_tokens must be 1..100")
+        if raw_cache_compression not in {"gzip", "none"}:
+            raise ValueError("raw_cache_compression must be 'gzip' or 'none'")
         self.client = client or httpx.Client(timeout=timeout, headers={"User-Agent": user_agent})
         self._owns_client = client is None
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
@@ -81,6 +84,8 @@ class GracClient:
         self.request_interval = request_interval
         self.max_sentence_tokens, self.seed = max_sentence_tokens, seed
         self.max_page_concurrency = max_page_concurrency
+        self.raw_cache_compression = raw_cache_compression
+        self.store_raw_line = store_raw_line
         self._last_request = 0.0
         self._request_start_lock = threading.Lock()
         self._retrieval_counter_lock = threading.Lock()
@@ -95,13 +100,15 @@ class GracClient:
                    max_page_concurrency=config.max_page_concurrency,
                    max_retries=config.max_retries, poll_attempts=config.poll_attempts,
                    request_interval=config.request_interval_seconds,
-                   max_sentence_tokens=config.max_sentence_tokens, seed=config.seed)
+                   max_sentence_tokens=config.max_sentence_tokens, seed=config.seed,
+                   raw_cache_compression=config.raw_cache_compression,
+                   store_raw_line=config.store_raw_line)
 
     @property
     def cache_identity(self) -> dict[str, Any]:
         return {"adapter": ADAPTER_VERSION, "endpoint": self.endpoint, "corpus": self.corpus,
                 "page_size": self.page_size, "max_sentence_tokens": self.max_sentence_tokens,
-                "seed": self.seed}
+                "seed": self.seed, "store_raw_line": self.store_raw_line}
 
     def close(self) -> None:
         if self._owns_client:
@@ -120,7 +127,25 @@ class GracClient:
         index = self.cache_dir / "requests" / f"{key}.json" if self.cache_dir else None
         if self.resume and index and index.exists():
             record = json.loads(index.read_text(encoding="utf-8"))
-            return json.loads(record["response_text"]), record
+            response_text = record.get("response_text")
+            if response_text is None:
+                raw_path = record.get("raw_response_path")
+                if not raw_path:
+                    raise GracError(f"ГРАК cache index has no raw response pointer: {index}")
+                raw_file = Path(raw_path)
+                try:
+                    if raw_file.suffix == ".gz":
+                        import gzip
+                        with gzip.open(raw_file, "rt", encoding="utf-8") as handle:
+                            raw_record = json.load(handle)
+                    else:
+                        raw_record = json.loads(raw_file.read_text(encoding="utf-8"))
+                except (OSError, ValueError, KeyError) as error:
+                    raise GracError(f"ГРАК raw cache could not be read: {raw_file}") from error
+                response_text = raw_record.get("response_text")
+            if not isinstance(response_text, str):
+                raise GracError(f"ГРАК cache entry has no response text: {index}")
+            return json.loads(response_text), record
         for attempt in range(self.max_retries + 1):
             with self._retrieval_counter_lock:
                 self._retrieval_request_attempts += 1
@@ -144,9 +169,20 @@ class GracClient:
                       "retrieved_at": datetime.now(timezone.utc).isoformat(),
                       "status_code": response.status_code, "response_text": response.text}
             if self.cache_dir:
-                raw_path = self.cache_dir / "raw" / f"{content_hash(record)}.json"
-                record["raw_response_path"] = str(raw_path)
-                atomic_write_json(raw_path, record)
+                suffix = ".json.gz" if self.raw_cache_compression == "gzip" else ".json"
+                raw_path = self.cache_dir / "raw" / f"{content_hash(record)}{suffix}"
+                raw_record = {**record, "raw_response_path": str(raw_path)}
+                if self.raw_cache_compression == "gzip":
+                    atomic_write_gzip_json(raw_path, raw_record)
+                else:
+                    atomic_write_json(raw_path, raw_record)
+                # Keep the request cache as a small index.  Older caches may
+                # still contain response_text and remain readable above. The
+                # index is written below only after a complete valid response
+                # is confirmed, so unfinished asynchronous responses are not
+                # accidentally replayed as completed pages.
+                record = {key: value for key, value in raw_record.items()
+                          if key != "response_text"}
             if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < self.max_retries:
                 retry_after = response.headers.get("Retry-After", "")
                 delay = float(retry_after) if retry_after.isdigit() else 2 ** attempt
@@ -326,7 +362,8 @@ class GracClient:
                                     "hitlen": row["hitlen"]})
                     skipped_by_reason["sentence_too_long"] = skipped_by_reason.get("sentence_too_long", 0) + 1
                     continue
-                example = self._parse_line(lemma, cql, row, refs, info, payload, record)
+                example = self._parse_line(lemma, cql, row, refs, info, payload, record,
+                                           page_number=page, page_offset=offset)
                 if example.example_id in seen:
                     duplicate_rows_skipped += 1
                     continue
@@ -357,7 +394,8 @@ class GracClient:
         return output
 
     def _parse_line(self, lemma: str, cql: str, row: dict[str, Any], refs: list[str],
-                    info: dict[str, Any], payload: dict[str, Any], record: dict[str, Any]) -> CandidateExample:
+                    info: dict[str, Any], payload: dict[str, Any], record: dict[str, Any], *,
+                    page_number: int, page_offset: int) -> CandidateExample:
         if type(row.get("toknum")) is not int or not isinstance(row.get("Kwic"), list):
             raise GracError("ГРАК line is missing toknum/Kwic")
         chunks = []
@@ -378,16 +416,18 @@ class GracClient:
         references = {key.lstrip("="): html.unescape(value) for key, value in zip(refs, values)
                       if isinstance(value, str) and value not in ("", "===NONE===")}
         metadata: dict[str, Any] = {
-            "corpus": self.corpus, "corpus_name": info.get("name"), "corpus_info": info.get("info"),
+            "corpus": self.corpus, "corpus_name": info.get("name"),
             "sentence_start_token": row["toknum"], "sentence_token_count": row["hitlen"],
             "references": references, "total_sentence_hits": payload["concsize"],
             "query": cql, "endpoint": self.endpoint + "concordance",
-            "request_url": record["url"], "request_params": record["params"],
+            "page_number": page_number, "page_offset": page_offset,
             "retrieved_at": record["retrieved_at"], "raw_response_path": record.get("raw_response_path"),
             "api_version": payload.get("api_version"), "manatee_version": payload.get("manatee_version"),
-            "adapter_version": ADAPTER_VERSION, "raw_line": row,
+            "adapter_version": ADAPTER_VERSION,
             "text_reconstruction": "Bonito g-glued KWIC chunks, HTML-decoded, joined with spaces",
         }
+        if self.store_raw_line:
+            metadata["raw_line"] = row
         for source, target in {"doc": "document_id", "doc.author": "author", "doc.title": "title",
                                "doc.date": "year", "doc.genre": "genre", "doc.uri": "url",
                                "doc.publication": "publication", "doc.publisher": "publisher"}.items():

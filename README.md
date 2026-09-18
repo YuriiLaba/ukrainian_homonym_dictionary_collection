@@ -55,8 +55,11 @@ is corpus-rendered text, not a claim of original document whitespace fidelity.
 The adapter discovers available document metadata using `corp_info`, then requests
 those fields in each concordance page. Examples retain corpus/version information,
 document and sentence token identifiers, available author/title/date/genre/source URL,
-the exact query and request parameters, timestamps, backend versions and raw rows.
-Unavailable values (`===NONE===`) are omitted from the interpreted metadata.
+the exact query, timestamps, backend versions and a pointer to the immutable raw
+response snapshot. Unavailable values (`===NONE===`) are omitted from the interpreted
+metadata. The complete Bonito row is not copied into every example by default because
+it is already available in that raw snapshot; set `grac.store_raw_line: true` when
+per-example inline raw rows are needed.
 
 Queries can compute asynchronously: retrieval polls until completion, paginates, and
 retries transient HTTP failures with bounded backoff. Non-JSON responses, permission
@@ -112,11 +115,14 @@ ordered deterministically after requests complete, and each request retains its 
 cache key and OpenAI request identifier.
 
 Raw response snapshots, completed page caches and completed lemma results are stored
-under `outputs/grac/cache/`. Rerunning the same request reuses the cache without network
-calls; an interrupted run can reuse completed pages. `--force` refreshes results while
-retaining previous raw snapshots. Cache identity includes the endpoint, corpus,
-adapter version, limits, page size and sampling seed. Fixture data use a separate identity.
-Keep the cache with research artifacts to preserve the exact source snapshot.
+under `outputs/grac/cache/`. New pipeline runs compress each raw response as one
+`.json.gz` snapshot. The request cache is only a small index pointing to that snapshot;
+it no longer stores a second copy of the response body. Rerunning the same request
+reuses the cache without network calls; an interrupted run can reuse completed pages.
+`--force` refreshes results while retaining previous raw snapshots. Cache identity
+includes the endpoint, corpus, adapter version, limits, page size and sampling seed.
+Fixture data use a separate identity. Keep the cache with research artifacts to
+preserve the exact source snapshot.
 
 The baseline `--dry-run` retrieves and caches candidates without LLM validation. For
 offline work, both workflows accept `--grac-fixture path/to/examples.json`; this supports

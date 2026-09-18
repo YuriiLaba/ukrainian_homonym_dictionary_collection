@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import gzip
 import os
 from pathlib import Path
 from typing import Any, Iterable, TypeVar
@@ -45,6 +46,20 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     ensure_parent(path)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")
+    os.replace(temporary, path)
+
+
+def atomic_write_gzip_json(path: Path, payload: Any, *, compresslevel: int = 6) -> None:
+    """Atomically write JSON compressed with gzip.
+
+    This is used for large immutable HTTP response snapshots.  Compression
+    reduces storage substantially while retaining the complete raw response.
+    """
+    ensure_parent(path)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with gzip.open(temporary, "wt", encoding="utf-8", compresslevel=compresslevel) as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
         handle.write("\n")
     os.replace(temporary, path)
