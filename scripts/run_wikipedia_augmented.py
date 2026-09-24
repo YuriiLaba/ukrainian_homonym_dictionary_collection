@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import time
+from pathlib import Path
 
 from homonym_pipeline.config import load_config
 from homonym_pipeline.logging_utils import configure_pipeline_logging
@@ -11,6 +13,14 @@ from homonym_pipeline.output.manifest import finish_manifest, start_manifest
 from homonym_pipeline.output.statistics import calculate_statistics
 from homonym_pipeline.output.writer import write_final
 from homonym_pipeline.pipeline.wikipedia_augmented import run_wikipedia_augmented
+
+
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main() -> None:
@@ -74,9 +84,13 @@ def main() -> None:
         config.llm.model_validation = args.validation_model
     if args.gloss_model:
         config.llm.model_gloss = args.gloss_model
+    run_parameters = {"max_lemmas": args.max_lemmas, "force": args.force, "dry_run": args.dry_run}
+    if args.grac_fixture:
+        run_parameters["grac_fixture"] = str(Path(args.grac_fixture).resolve())
+        run_parameters["grac_fixture_sha256"] = _sha256(args.grac_fixture)
     manifest = start_manifest(
         "wikipedia_augmented", args.input, args.output, config,
-        run_parameters={"max_lemmas": args.max_lemmas, "force": args.force, "dry_run": args.dry_run},
+        run_parameters=run_parameters,
     )
     configure_pipeline_logging(args.output)
     logging.info("[run] run_id=%s workflow=wikipedia_augmented", manifest["run_id"])

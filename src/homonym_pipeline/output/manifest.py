@@ -113,6 +113,8 @@ def finish_manifest(
         "run_input_statistics.json",
         "logs/pipeline.log",
         "audit/lemma_audit.jsonl",
+        "gloss_inventory/wikipedia_raw.jsonl",
+        "gloss_inventory/wikipedia_normalized.jsonl",
         "grac/candidate_examples.jsonl",
         "grac/embedding_rankings.jsonl",
         "grac/embedding_calls.jsonl",

@@ -67,4 +67,8 @@ class WikipediaClient:
 
     @staticmethod
     def _extract_pages(payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return list(payload.get("query", {}).get("pages", []))
+        return [
+            page
+            for page in payload.get("query", {}).get("pages", [])
+            if not page.get("missing") and not page.get("invalid")
+        ]

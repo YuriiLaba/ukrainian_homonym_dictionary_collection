@@ -342,7 +342,7 @@
     {
       "entry_id": 13,
       "lemma": "áйсинг",
-      "lemma_normalized": "аисинг",
+      "lemma_normalized": "айсинг",
       "letter": "А",
       "senses": [
         {
@@ -1127,7 +1127,7 @@
     {
       "entry_id": 38,
       "lemma": "бáйка",
-      "lemma_normalized": "баика",
+      "lemma_normalized": "байка",
       "letter": "Б",
       "senses": [
         {
@@ -1353,7 +1353,7 @@
     {
       "entry_id": 46,
       "lemma": "балалáйка",
-      "lemma_normalized": "балалаика",
+      "lemma_normalized": "балалайка",
       "letter": "Б",
       "senses": [
         {
@@ -2051,7 +2051,7 @@
     {
       "entry_id": 68,
       "lemma": "басéйн",
-      "lemma_normalized": "басеин",
+      "lemma_normalized": "басейн",
       "letter": "Б",
       "senses": [
         {
@@ -3253,7 +3253,7 @@
     {
       "entry_id": 108,
       "lemma": "брейк",
-      "lemma_normalized": "бреик",
+      "lemma_normalized": "брейк",
       "letter": "Б",
       "senses": [
         {
@@ -3402,7 +3402,7 @@
     {
       "entry_id": 112,
       "lemma": "бугáй",
-      "lemma_normalized": "бугаи",
+      "lemma_normalized": "бугай",
       "letter": "Б",
       "senses": [
         {
@@ -3628,7 +3628,7 @@
     {
       "entry_id": 120,
       "lemma": "буржýйка",
-      "lemma_normalized": "буржуика",
+      "lemma_normalized": "буржуйка",
       "letter": "Б",
       "senses": [
         {
@@ -3758,7 +3758,7 @@
     {
       "entry_id": 125,
       "lemma": "вáйда",
-      "lemma_normalized": "ваида",
+      "lemma_normalized": "вайда",
       "letter": "В",
       "senses": [
         {
@@ -4116,7 +4116,7 @@
     {
       "entry_id": 136,
       "lemma": "венецíйка",
-      "lemma_normalized": "венеціика",
+      "lemma_normalized": "венеційка",
       "letter": "В",
       "senses": [
         {
@@ -4411,7 +4411,7 @@
     {
       "entry_id": 147,
       "lemma": "вúбій",
-      "lemma_normalized": "вибіи",
+      "lemma_normalized": "вибій",
       "letter": "В",
       "senses": [
         {
@@ -4794,7 +4794,7 @@
     {
       "entry_id": 160,
       "lemma": "відбíй",
-      "lemma_normalized": "відбіи",
+      "lemma_normalized": "відбій",
       "letter": "В",
       "senses": [
         {
@@ -5716,7 +5716,7 @@
     {
       "entry_id": 192,
       "lemma": "гавáйка",
-      "lemma_normalized": "гаваика",
+      "lemma_normalized": "гавайка",
       "letter": "Г",
       "senses": [
         {
@@ -6238,7 +6238,7 @@
     {
       "entry_id": 210,
       "lemma": "гімалáйка",
-      "lemma_normalized": "гімалаика",
+      "lemma_normalized": "гімалайка",
       "letter": "Г",
       "senses": [
         {
@@ -6316,7 +6316,7 @@
     {
       "entry_id": 213,
       "lemma": "глей",
-      "lemma_normalized": "глеи",
+      "lemma_normalized": "глей",
       "letter": "Г",
       "senses": [
         {
@@ -7492,7 +7492,7 @@
     {
       "entry_id": 252,
       "lemma": "далекобійник",
-      "lemma_normalized": "далекобіиник",
+      "lemma_normalized": "далекобійник",
       "letter": "Д",
       "senses": [
         {
@@ -7518,7 +7518,7 @@
     {
       "entry_id": 253,
       "lemma": "двíйка",
-      "lemma_normalized": "двіика",
+      "lemma_normalized": "двійка",
       "letter": "Д",
       "senses": [
         {
@@ -9909,7 +9909,7 @@
     {
       "entry_id": 337,
       "lemma": "завíй",
-      "lemma_normalized": "завіи",
+      "lemma_normalized": "завій",
       "letter": "З",
       "senses": [
         {
@@ -10092,7 +10092,7 @@
     {
       "entry_id": 343,
       "lemma": "заїзд",
-      "lemma_normalized": "заізд",
+      "lemma_normalized": "заїзд",
       "letter": "З",
       "senses": [
         {
@@ -10127,7 +10127,7 @@
     {
       "entry_id": 344,
       "lemma": "займáння",
-      "lemma_normalized": "заимання",
+      "lemma_normalized": "займання",
       "letter": "З",
       "senses": [
         {
@@ -10763,7 +10763,7 @@
     {
       "entry_id": 365,
       "lemma": "збій",
-      "lemma_normalized": "збіи",
+      "lemma_normalized": "збій",
       "letter": "З",
       "senses": [
         {
@@ -10955,7 +10955,7 @@
     {
       "entry_id": 371,
       "lemma": "звіробíй",
-      "lemma_normalized": "звіробіи",
+      "lemma_normalized": "звіробій",
       "letter": "З",
       "senses": [
         {
@@ -11355,7 +11355,7 @@
     {
       "entry_id": 385,
       "lemma": "з’їзд",
-      "lemma_normalized": "з’ізд",
+      "lemma_normalized": "з’їзд",
       "letter": "З",
       "senses": [
         {
@@ -11433,7 +11433,7 @@
     {
       "entry_id": 388,
       "lemma": "злóтий",
-      "lemma_normalized": "злотии",
+      "lemma_normalized": "злотий",
       "letter": "З",
       "senses": [
         {
@@ -11485,7 +11485,7 @@
     {
       "entry_id": 390,
       "lemma": "змíйка",
-      "lemma_normalized": "зміика",
+      "lemma_normalized": "змійка",
       "letter": "З",
       "senses": [
         {
@@ -11529,7 +11529,7 @@
     {
       "entry_id": 391,
       "lemma": "змійовúк",
-      "lemma_normalized": "зміиовик",
+      "lemma_normalized": "змійовик",
       "letter": "З",
       "senses": [
         {
@@ -12130,7 +12130,7 @@
     {
       "entry_id": 411,
       "lemma": "інсáйд",
-      "lemma_normalized": "інсаид",
+      "lemma_normalized": "інсайд",
       "letter": "І",
       "senses": [
         {
@@ -12390,7 +12390,7 @@
     {
       "entry_id": 421,
       "lemma": "йóржик",
-      "lemma_normalized": "иоржик",
+      "lemma_normalized": "йоржик",
       "letter": "І",
       "senses": [
         {
@@ -12425,7 +12425,7 @@
     {
       "entry_id": 422,
       "lemma": "йóта",
-      "lemma_normalized": "иота",
+      "lemma_normalized": "йота",
       "letter": "І",
       "senses": [
         {
@@ -12686,7 +12686,7 @@
     {
       "entry_id": 431,
       "lemma": "кáдмій",
-      "lemma_normalized": "кадміи",
+      "lemma_normalized": "кадмій",
       "letter": "К",
       "senses": [
         {
@@ -13635,7 +13635,7 @@
     {
       "entry_id": 463,
       "lemma": "кейс",
-      "lemma_normalized": "кеис",
+      "lemma_normalized": "кейс",
       "letter": "К",
       "senses": [
         {
@@ -13713,7 +13713,7 @@
     {
       "entry_id": 466,
       "lemma": "китáйка",
-      "lemma_normalized": "китаика",
+      "lemma_normalized": "китайка",
       "letter": "К",
       "senses": [
         {
@@ -15060,7 +15060,7 @@
     {
       "entry_id": 505,
       "lemma": "комбáйн",
-      "lemma_normalized": "комбаин",
+      "lemma_normalized": "комбайн",
       "letter": "К",
       "senses": [
         {
@@ -15460,7 +15460,7 @@
     {
       "entry_id": 519,
       "lemma": "копíйка",
-      "lemma_normalized": "копіика",
+      "lemma_normalized": "копійка",
       "letter": "К",
       "senses": [
         {
@@ -16009,7 +16009,7 @@
     {
       "entry_id": 537,
       "lemma": "край",
-      "lemma_normalized": "краи",
+      "lemma_normalized": "край",
       "letter": "К",
       "senses": [
         {
@@ -16035,7 +16035,7 @@
     {
       "entry_id": 538,
       "lemma": "крáйка",
-      "lemma_normalized": "краика",
+      "lemma_normalized": "крайка",
       "letter": "К",
       "senses": [
         {
@@ -16915,7 +16915,7 @@
     {
       "entry_id": 567,
       "lemma": "курáй",
-      "lemma_normalized": "кураи",
+      "lemma_normalized": "курай",
       "letter": "К",
       "senses": [
         {
@@ -16941,7 +16941,7 @@
     {
       "entry_id": 568,
       "lemma": "курíй",
-      "lemma_normalized": "куріи",
+      "lemma_normalized": "курій",
       "letter": "К",
       "senses": [
         {
@@ -17150,7 +17150,7 @@
     {
       "entry_id": 575,
       "lemma": "лáйка",
-      "lemma_normalized": "лаика",
+      "lemma_normalized": "лайка",
       "letter": "Л",
       "senses": [
         {
@@ -17185,7 +17185,7 @@
     {
       "entry_id": 576,
       "lemma": "лáйнер",
-      "lemma_normalized": "лаинер",
+      "lemma_normalized": "лайнер",
       "letter": "Л",
       "senses": [
         {
@@ -18507,7 +18507,7 @@
     {
       "entry_id": 622,
       "lemma": "лишáй",
-      "lemma_normalized": "лишаи",
+      "lemma_normalized": "лишай",
       "letter": "Л",
       "senses": [
         {
@@ -18707,7 +18707,7 @@
     {
       "entry_id": 629,
       "lemma": "лíйка",
-      "lemma_normalized": "ліика",
+      "lemma_normalized": "лійка",
       "letter": "Л",
       "senses": [
         {
@@ -18829,7 +18829,7 @@
     {
       "entry_id": 633,
       "lemma": "лінíйка",
-      "lemma_normalized": "лініика",
+      "lemma_normalized": "лінійка",
       "letter": "Л",
       "senses": [
         {
@@ -20144,7 +20144,7 @@
     {
       "entry_id": 677,
       "lemma": "маївка",
-      "lemma_normalized": "маівка",
+      "lemma_normalized": "маївка",
       "letter": "М",
       "senses": [
         {
@@ -20179,7 +20179,7 @@
     {
       "entry_id": 678,
       "lemma": "май",
-      "lemma_normalized": "маи",
+      "lemma_normalized": "май",
       "letter": "М",
       "senses": [
         {
@@ -20205,7 +20205,7 @@
     {
       "entry_id": 679,
       "lemma": "майдáн",
-      "lemma_normalized": "маидан",
+      "lemma_normalized": "майдан",
       "letter": "М",
       "senses": [
         {
@@ -20240,7 +20240,7 @@
     {
       "entry_id": 680,
       "lemma": "мáйка",
-      "lemma_normalized": "маика",
+      "lemma_normalized": "майка",
       "letter": "М",
       "senses": [
         {
@@ -20266,7 +20266,7 @@
     {
       "entry_id": 681,
       "lemma": "мáйна",
-      "lemma_normalized": "маина",
+      "lemma_normalized": "майна",
       "letter": "М",
       "senses": [
         {
@@ -20292,7 +20292,7 @@
     {
       "entry_id": 682,
       "lemma": "майóр",
-      "lemma_normalized": "маиор",
+      "lemma_normalized": "майор",
       "letter": "М",
       "senses": [
         {
@@ -20318,7 +20318,7 @@
     {
       "entry_id": 683,
       "lemma": "майстéрка",
-      "lemma_normalized": "маистерка",
+      "lemma_normalized": "майстерка",
       "letter": "М",
       "senses": [
         {
@@ -20344,7 +20344,7 @@
     {
       "entry_id": 684,
       "lemma": "мáйя",
-      "lemma_normalized": "маия",
+      "lemma_normalized": "майя",
       "letter": "М",
       "senses": [
         {
@@ -20483,7 +20483,7 @@
     {
       "entry_id": 689,
       "lemma": "малахáй",
-      "lemma_normalized": "малахаи",
+      "lemma_normalized": "малахай",
       "letter": "М",
       "senses": [
         {
@@ -21406,7 +21406,7 @@
     {
       "entry_id": 720,
       "lemma": "медальйóн",
-      "lemma_normalized": "медальион",
+      "lemma_normalized": "медальйон",
       "letter": "М",
       "senses": [
         {
@@ -22120,7 +22120,7 @@
     {
       "entry_id": 744,
       "lemma": "мúйниця",
-      "lemma_normalized": "мииниця",
+      "lemma_normalized": "мийниця",
       "letter": "М",
       "senses": [
         {
@@ -22172,7 +22172,7 @@
     {
       "entry_id": 746,
       "lemma": "миколáйчики",
-      "lemma_normalized": "миколаичики",
+      "lemma_normalized": "миколайчики",
       "letter": "М",
       "senses": [
         {
@@ -22538,7 +22538,7 @@
     {
       "entry_id": 758,
       "lemma": "міньйóн",
-      "lemma_normalized": "міньион",
+      "lemma_normalized": "міньйон",
       "letter": "М",
       "senses": [
         {
@@ -23731,7 +23731,7 @@
     {
       "entry_id": 798,
       "lemma": "нагáйка",
-      "lemma_normalized": "нагаика",
+      "lemma_normalized": "нагайка",
       "letter": "Н",
       "senses": [
         {
@@ -24574,7 +24574,7 @@
     {
       "entry_id": 828,
       "lemma": "настíй",
-      "lemma_normalized": "настіи",
+      "lemma_normalized": "настій",
       "letter": "Н",
       "senses": [
         {
@@ -25025,7 +25025,7 @@
     {
       "entry_id": 845,
       "lemma": "нейтрáлка",
-      "lemma_normalized": "неитралка",
+      "lemma_normalized": "нейтралка",
       "letter": "Н",
       "senses": [
         {
@@ -25399,7 +25399,7 @@
     {
       "entry_id": 858,
       "lemma": "носíй",
-      "lemma_normalized": "носіи",
+      "lemma_normalized": "носій",
       "letter": "Н",
       "senses": [
         {
@@ -26322,7 +26322,7 @@
     {
       "entry_id": 889,
       "lemma": "олíйниця",
-      "lemma_normalized": "оліиниця",
+      "lemma_normalized": "олійниця",
       "letter": "О",
       "senses": [
         {
@@ -26383,7 +26383,7 @@
     {
       "entry_id": 891,
       "lemma": "олімпíйка",
-      "lemma_normalized": "олімпіика",
+      "lemma_normalized": "олімпійка",
       "letter": "О",
       "senses": [
         {
@@ -27408,7 +27408,7 @@
     {
       "entry_id": 928,
       "lemma": "пай",
-      "lemma_normalized": "паи",
+      "lemma_normalized": "пай",
       "letter": "П",
       "senses": [
         {
@@ -27434,7 +27434,7 @@
     {
       "entry_id": 929,
       "lemma": "пáйка",
-      "lemma_normalized": "паика",
+      "lemma_normalized": "пайка",
       "letter": "П",
       "senses": [
         {
@@ -29863,7 +29863,7 @@
     {
       "entry_id": 1011,
       "lemma": "перешúйок",
-      "lemma_normalized": "перешииок",
+      "lemma_normalized": "перешийок",
       "letter": "П",
       "senses": [
         {
@@ -30812,7 +30812,7 @@
     {
       "entry_id": 1043,
       "lemma": "підóйма",
-      "lemma_normalized": "підоима",
+      "lemma_normalized": "підойма",
       "letter": "П",
       "senses": [
         {
@@ -34881,7 +34881,7 @@
     {
       "entry_id": 1177,
       "lemma": "приймáк",
-      "lemma_normalized": "приимак",
+      "lemma_normalized": "приймак",
       "letter": "П",
       "senses": [
         {
@@ -35621,7 +35621,7 @@
     {
       "entry_id": 1202,
       "lemma": "проїзд",
-      "lemma_normalized": "проізд",
+      "lemma_normalized": "проїзд",
       "letter": "П",
       "senses": [
         {
@@ -37093,7 +37093,7 @@
     {
       "entry_id": 1251,
       "lemma": "рейд",
-      "lemma_normalized": "реид",
+      "lemma_normalized": "рейд",
       "letter": "Р",
       "senses": [
         {
@@ -37119,7 +37119,7 @@
     {
       "entry_id": 1252,
       "lemma": "рéйдер",
-      "lemma_normalized": "реидер",
+      "lemma_normalized": "рейдер",
       "letter": "Р",
       "senses": [
         {
@@ -37145,7 +37145,7 @@
     {
       "entry_id": 1253,
       "lemma": "рейс",
-      "lemma_normalized": "реис",
+      "lemma_normalized": "рейс",
       "letter": "Р",
       "senses": [
         {
@@ -37171,7 +37171,7 @@
     {
       "entry_id": 1254,
       "lemma": "рéйтер",
-      "lemma_normalized": "реитер",
+      "lemma_normalized": "рейтер",
       "letter": "Р",
       "senses": [
         {
@@ -37693,7 +37693,7 @@
     {
       "entry_id": 1272,
       "lemma": "рúйка",
-      "lemma_normalized": "риика",
+      "lemma_normalized": "рийка",
       "letter": "Р",
       "senses": [
         {
@@ -38110,7 +38110,7 @@
     {
       "entry_id": 1287,
       "lemma": "рій",
-      "lemma_normalized": "ріи",
+      "lemma_normalized": "рій",
       "letter": "Р",
       "senses": [
         {
@@ -38354,7 +38354,7 @@
     {
       "entry_id": 1295,
       "lemma": "розвíй",
-      "lemma_normalized": "розвіи",
+      "lemma_normalized": "розвій",
       "letter": "Р",
       "senses": [
         {
@@ -40637,7 +40637,7 @@
     {
       "entry_id": 1370,
       "lemma": "сеньйóр",
-      "lemma_normalized": "сеньиор",
+      "lemma_normalized": "сеньйор",
       "letter": "С",
       "senses": [
         {
@@ -41681,7 +41681,7 @@
     {
       "entry_id": 1406,
       "lemma": "слайд",
-      "lemma_normalized": "слаид",
+      "lemma_normalized": "слайд",
       "letter": "С",
       "senses": [
         {
@@ -42707,7 +42707,7 @@
     {
       "entry_id": 1442,
       "lemma": "спрайт",
-      "lemma_normalized": "спраит",
+      "lemma_normalized": "спрайт",
       "letter": "С",
       "senses": [
         {
@@ -42916,7 +42916,7 @@
     {
       "entry_id": 1449,
       "lemma": "стейк",
-      "lemma_normalized": "стеик",
+      "lemma_normalized": "стейк",
       "letter": "С",
       "senses": [
         {
@@ -43179,7 +43179,7 @@
     {
       "entry_id": 1456,
       "lemma": "стрій",
-      "lemma_normalized": "стріи",
+      "lemma_normalized": "стрій",
       "letter": "С",
       "senses": [
         {
@@ -45581,7 +45581,7 @@
     {
       "entry_id": 1538,
       "lemma": "трíйка",
-      "lemma_normalized": "тріика",
+      "lemma_normalized": "трійка",
       "letter": "Т",
       "senses": [
         {
@@ -46837,7 +46837,7 @@
     {
       "entry_id": 1578,
       "lemma": "файл",
-      "lemma_normalized": "фаил",
+      "lemma_normalized": "файл",
       "letter": "Ф",
       "senses": [
         {
@@ -48816,7 +48816,7 @@
     {
       "entry_id": 1642,
       "lemma": "хорéй",
-      "lemma_normalized": "хореи",
+      "lemma_normalized": "хорей",
       "letter": "Х",
       "senses": [
         {
@@ -48842,7 +48842,7 @@
     {
       "entry_id": 1643,
       "lemma": "хорýнжий",
-      "lemma_normalized": "хорунжии",
+      "lemma_normalized": "хорунжий",
       "letter": "Х",
       "senses": [
         {
@@ -49609,7 +49609,7 @@
     {
       "entry_id": 1668,
       "lemma": "чáйка",
-      "lemma_normalized": "чаика",
+      "lemma_normalized": "чайка",
       "letter": "Ч",
       "senses": [
         {
@@ -49635,7 +49635,7 @@
     {
       "entry_id": 1669,
       "lemma": "чáйник",
-      "lemma_normalized": "чаиник",
+      "lemma_normalized": "чайник",
       "letter": "Ч",
       "senses": [
         {
@@ -50507,7 +50507,7 @@
     {
       "entry_id": 1697,
       "lemma": "шáйба",
-      "lemma_normalized": "шаиба",
+      "lemma_normalized": "шайба",
       "letter": "Ш",
       "senses": [
         {
@@ -50934,7 +50934,7 @@
     {
       "entry_id": 1711,
       "lemma": "шúйка",
-      "lemma_normalized": "шиика",
+      "lemma_normalized": "шийка",
       "letter": "Ш",
       "senses": [
         {
@@ -51101,7 +51101,7 @@
     {
       "entry_id": 1715,
       "lemma": "шлейф",
-      "lemma_normalized": "шлеиф",
+      "lemma_normalized": "шлейф",
       "letter": "Ш",
       "senses": [
         {
@@ -52069,7 +52069,7 @@
     {
       "entry_id": 1746,
       "lemma": "яйцé",
-      "lemma_normalized": "яице",
+      "lemma_normalized": "яйце",
       "letter": "Я",
       "senses": [
         {
